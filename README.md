@@ -4,7 +4,7 @@
 
 A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)). The dashboard is being built in small steps: see the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)), and for now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built and deployed; it opens to me once Cloudflare Access is switched on (see [Who can get in](#who-can-get-in)).
 
 ## What it does
 
