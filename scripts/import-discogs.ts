@@ -6,8 +6,8 @@
  * Reads DISCOGS_TOKEN and API_KEY from the environment, or from .dev.vars.
  * Safe to re-run: every record remembers its Discogs collection item, and
  * items already in the vault are skipped. Records are created without an
- * immediate price (?value=false); the valuation cron prices them within the
- * hour, 20 at a time, inside Discogs' rate limit.
+ * immediate price (?value=false); the valuation cron prices them a few at a
+ * time, every minute, inside Discogs' rate limit.
  */
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -121,5 +121,5 @@ for (const item of vinyl) {
 
 console.log(`Created ${created}, already there ${skipped}, failed ${failed.length}.`);
 for (const f of failed) console.log(`  failed: ${f}`);
-if (created > 0) console.log("The valuation cron prices 20 records every five minutes; check GET /collection.");
+if (created > 0) console.log("The valuation cron prices a few records every minute; check GET /collection.");
 process.exit(failed.length > 0 ? 1 : 0);

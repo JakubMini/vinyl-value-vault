@@ -142,16 +142,21 @@ export async function deleteRecord(db: D1Database, id: number): Promise<boolean>
   return result.meta.changes > 0;
 }
 
-/** Records that can be valued, the ones that have waited longest first. Never-valued records come before all others. */
-export async function staleRecords(db: D1Database, limit: number): Promise<RecordRow[]> {
+/**
+ * Records due a price: never looked at, or last looked at before `dueBefore`. Never-valued
+ * records come first, then the ones that have waited longest. A record priced recently is
+ * left alone, so once the collection is fresh the job makes no Discogs calls at all.
+ */
+export async function staleRecords(db: D1Database, limit: number, dueBefore: string): Promise<RecordRow[]> {
   const { results } = await db
     .prepare(
       `SELECT * FROM records
        WHERE discogs_release_id IS NOT NULL
+         AND (last_valued_at IS NULL OR last_valued_at < ?)
        ORDER BY last_valued_at IS NOT NULL, last_valued_at ASC, id ASC
        LIMIT ?`,
     )
-    .bind(limit)
+    .bind(dueBefore, limit)
     .all<RecordRow>();
   return results;
 }

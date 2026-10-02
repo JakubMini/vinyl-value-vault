@@ -214,7 +214,7 @@ app.post("/records/:id/revalue", async (c) => {
   return c.json({ outcome, record: presentRecord(updated) });
 });
 
-// Run a valuation batch on demand. The cron does the same thing every five minutes.
+// Run a valuation batch on demand. The cron does the same thing every minute.
 app.post("/valuations/run", async (c) => {
   const limit = Number(c.req.query("limit"));
   const summary = await runValuationBatch(c.env, Number.isInteger(limit) && limit > 0 ? { limit } : {});
