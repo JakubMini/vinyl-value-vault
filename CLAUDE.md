@@ -32,7 +32,7 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 - Before any wrangler command that touches Cloudflare (deploy, `d1 ... --remote`, `secret`, `tail`),
   run `npx wrangler whoami` and confirm it names jakub.m.szypicyn@gmail.com. If it names anything
   else, stop and ask Jakub to switch: `npx wrangler logout && npx wrangler login`. Never log in on
-  his behalf.
+  Jakub's behalf.
 - Run wrangler from this repo's root, so it uses this project's `wrangler.jsonc` and Worker name.
 - Treat a failed migrate or deploy as a stop. Do not run imports or anything else against the live
   vault until both have succeeded on the right account.
