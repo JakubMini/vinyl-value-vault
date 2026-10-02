@@ -4,6 +4,7 @@ import { type JsonBodyType, http, HttpResponse } from "msw";
 import { expect } from "vitest";
 
 import worker from "../src/index";
+import type { ListedRecord } from "../src/api-types";
 import type { CollectionItem } from "../src/release";
 import { network } from "./network";
 
@@ -193,4 +194,41 @@ export async function seedRecord(fields: {
     .first<{ id: number }>();
   if (!row) throw new Error("seed failed");
   return row;
+}
+
+/** A record as the collection list returns it, for testing the pure selection and insight logic without a database. */
+export function listedRecord(overrides: Partial<ListedRecord> = {}): ListedRecord {
+  return {
+    id: 1,
+    discogs_release_id: 1,
+    discogs_instance_id: 1,
+    artist: "Artist",
+    title: "Title",
+    label: null,
+    catalogue_number: null,
+    year: null,
+    country: null,
+    format: null,
+    media_condition: "VG+",
+    sleeve_condition: "VG+",
+    purchase_price_minor: null,
+    purchase_currency: null,
+    purchased_on: null,
+    notes: null,
+    current_value_minor: null,
+    current_currency: null,
+    current_value: null,
+    last_valued_at: null,
+    last_valuation_error: null,
+    cover_image_url: null,
+    thumb_url: null,
+    discogs_added_at: null,
+    discogs_removed_at: null,
+    spotify_album_id: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    change_30d_minor: null,
+    gain_minor: null,
+    ...overrides,
+  };
 }

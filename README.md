@@ -317,6 +317,7 @@ src/
   valuation.ts   the job: pick stale records, price them, snapshot the total
   sync.ts        the Discogs collection sync: add, refresh, flag what has gone
   spotify.ts     reading a Spotify album from a pasted link; Spotify URLs (shared with the dashboard)
+  select.ts      choosing records: search, filters, sort order and the URL they live in (shared with the dashboard)
   discogs.ts     Discogs API client
   release.ts     Discogs release and collection item -> record mapping
   db.ts          every SQL statement, typed
@@ -344,6 +345,22 @@ vite.config.ts   one build for the dashboard and the Worker
 - [ ] Alexa skill: "what is my collection worth?"
 - [ ] Sold prices from Discogs' sales history, entered by hand, if the suggestions prove off
 - [x] Gain and loss against purchase price, per record and overall
+- [ ] Dashboard: selection criteria for the table (decade, format, label, grades, value, Spotify, price paid), quick filters, and totals for whatever is shown
+- [ ] Market signals: copies for sale, the cheapest listing and how each price was found, on the record page and in the table
+- [ ] Dashboard: an Insights page: where the value sits by decade, format, grade, label and artist; the spread of values; how the collection has grown
+- [ ] Price change over a chosen window (a week, a month, a quarter, a year), for the dashboard and the Alexa skill
+- [ ] Genres and styles from Discogs, for filters and charts
+- [ ] Record page: the cheapest listing beside the value, where the record ranks in the collection, more by the same artist or label
+- [ ] Table tools: choose the columns, export the view as CSV
+- [ ] A cover wall: the collection as album art
+
+Ideas I have looked at and set aside, and why:
+
+- **A sparkline in every row.** It would read a month of prices for every record each time the table refreshes, which it does once a minute while records are queued. Too many database reads for a glance.
+- **Discogs' "have" and "want" counts** as a demand signal. They come from a third Discogs call per record, which would cut a valuation run from 15 records to 12. Perhaps a monthly refresh later.
+- **Country of pressing.** Discogs' collection payload does not carry it, so every synced record has none. A full release fetch per record would be the price.
+- **Coloured vinyl.** Discogs keeps the colour in a free-text field the mapping drops today. Folding it into the format string is a small change; it waits for a reason.
+- **Searching over the API** for the Alexa skill. The dashboard's search logic now lives in `src/select.ts`, so the Worker can offer the same with little code when the skill needs it.
 
 ## Licence
 
