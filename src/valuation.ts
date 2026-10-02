@@ -8,11 +8,13 @@
  * currently listed is used instead, and the method is recorded so the two are
  * never confused.
  *
- * Why small, frequent batches: Discogs allows 60 requests a minute per source
- * IP, and Workers share outgoing IPs with other Cloudflare customers, so part of
- * that allowance is often used by someone else. Five records a minute (at most
- * ten calls) spreads the load instead of bursting; the job reads the rate-limit
- * headers and stops early when the window is nearly spent. Records priced within
+ * How much a run takes on depends on the road (see discogsRoad below). Discogs
+ * allows 60 requests a minute per client address. On the tunnel road that
+ * allowance is the vault's own, so a run prices up to 15 records. On the pool
+ * road every Worker calling a Cloudflare-hosted site such as Discogs presents the
+ * same address (2a06:98c0:3600::103), the allowance is usually spent by someone
+ * else, and a run takes 5. Either way the job reads the rate-limit headers and
+ * stops early when the window is nearly spent, and records priced within
  * VALUATION_REFRESH_HOURS are skipped, so a fresh collection costs no calls.
  */
 import {
@@ -41,20 +43,49 @@ export interface ValueOptions {
 }
 
 export interface BatchSummary {
+  road: DiscogsRoad;
   considered: number;
   valued: number;
   unpriced: number;
   errors: number;
   stoppedEarly: boolean;
   reason?: string;
+  /** Discogs' X-Discogs-Ratelimit-Remaining after the last call, or null if none was made. */
+  rateLimitRemaining: number | null;
   snapshot?: SnapshotRow;
 }
 
+/**
+ * The road the vault's Discogs calls take out of Cloudflare.
+ *
+ * - tunnel: through the DISCOGS_EGRESS VPC service and the Cloudflare Tunnel behind it, so
+ *   the calls leave from the machine running the tunnel's connector and have Discogs'
+ *   allowance of 60 a minute to themselves.
+ * - pool:   a plain fetch, which reaches Discogs from the one client address every Worker
+ *   shares (2a06:98c0:3600::103), so the allowance is nearly always spent by others.
+ *
+ * Set by DISCOGS_ROAD, which `npm run egress:here` and `npm run egress:pool` switch. Anything
+ * other than "tunnel", including unset, is the pool: it needs nothing else to work.
+ */
+export type DiscogsRoad = "tunnel" | "pool";
+
+export function discogsRoad(env: Env): DiscogsRoad {
+  return env.DISCOGS_ROAD?.trim() === "tunnel" ? "tunnel" : "pool";
+}
+
 export function discogsFromEnv(env: Env): DiscogsClient {
+  const egress = discogsRoad(env) === "tunnel" ? env.DISCOGS_EGRESS : undefined;
   return new DiscogsClient({
     token: env.DISCOGS_TOKEN || undefined,
     userAgent: env.DISCOGS_USER_AGENT,
+    fetch: egress ? (url, init) => egress.fetch(url, init) : undefined,
   });
+}
+
+/** Records per run on each road. See VALUATION_BATCH_SIZE and VALUATION_TUNNEL_BATCH_SIZE in wrangler.jsonc. */
+function batchSize(env: Env, road: DiscogsRoad): number {
+  const configured = road === "tunnel" ? env.VALUATION_TUNNEL_BATCH_SIZE : env.VALUATION_BATCH_SIZE;
+  return Math.max(1, Number(configured) || 5);
 }
 
 /** Value one record now. Throws DiscogsError on transient upstream failure so the caller can decide. */
@@ -166,7 +197,8 @@ export async function regrade(db: D1Database, record: RecordRow, patch: RecordPa
 /** One scheduled run: refresh the stalest records, then snapshot the collection total if anything changed. */
 export async function runValuationBatch(env: Env, options: { limit?: number; now?: Date } = {}): Promise<BatchSummary> {
   const currency = env.VALUATION_CURRENCY;
-  const limit = options.limit ?? Math.max(1, Number(env.VALUATION_BATCH_SIZE) || 5);
+  const road = discogsRoad(env);
+  const limit = options.limit ?? batchSize(env, road);
   const nowDate = options.now ?? new Date();
   const now = nowDate.toISOString();
   const refreshHours = Math.max(0, Number(env.VALUATION_REFRESH_HOURS) || 24);
@@ -175,7 +207,15 @@ export async function runValuationBatch(env: Env, options: { limit?: number; now
   const suggestions = { available: true };
 
   const records = await staleRecords(env.DB, limit, dueBefore);
-  const summary: BatchSummary = { considered: records.length, valued: 0, unpriced: 0, errors: 0, stoppedEarly: false };
+  const summary: BatchSummary = {
+    road,
+    considered: records.length,
+    valued: 0,
+    unpriced: 0,
+    errors: 0,
+    stoppedEarly: false,
+    rateLimitRemaining: null,
+  };
 
   for (const record of records) {
     // Each record costs up to two requests. Leave room rather than hit the wall.
@@ -200,6 +240,7 @@ export async function runValuationBatch(env: Env, options: { limit?: number; now
     }
   }
 
+  summary.rateLimitRemaining = discogs.rateLimitRemaining;
   if (summary.valued > 0) summary.snapshot = await writeSnapshot(env.DB, currency, now);
   return summary;
 }

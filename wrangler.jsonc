@@ -20,14 +20,20 @@
     "head_sampling_rate": 1
   },
 
-  // Non-secret settings. Secrets (DISCOGS_TOKEN, API_KEY) live in .dev.vars locally
-  // and are set with `wrangler secret put` in production. See README.
+  // Non-secret settings. Secrets (DISCOGS_TOKEN, API_KEY, DISCOGS_ROAD) live in .dev.vars
+  // locally and are set with `wrangler secret put` in production. See README.
   "vars": {
     "VALUATION_CURRENCY": "GBP",
-    // Records per run. Each costs up to two Discogs calls. Discogs allows 60 a
-    // minute per IP and Workers share IPs, so small batches every minute beat
-    // big ones every five: in practice the window is often partly used already.
+    // Records per run on the pool road. Each costs up to two Discogs calls. Discogs allows
+    // 60 a minute per client address, and every Worker calling a Cloudflare-hosted site
+    // shares one (2a06:98c0:3600::103), so the window is usually spent already: a run
+    // every five minutes with a small batch takes what it can without knocking constantly.
     "VALUATION_BATCH_SIZE": "5",
+    // Records per run on the tunnel road, where the allowance is the vault's own. The
+    // limit is the Workers free plan's 50 subrequests, D1 calls included: 3 per run (two
+    // reads and the snapshot), plus up to 3 per record (two Discogs calls and one write), so
+    // 15 records is at most 48, and at most 30 Discogs calls a minute: half the allowance.
+    "VALUATION_TUNNEL_BATCH_SIZE": "15",
     // A record priced within this many hours is not priced again.
     "VALUATION_REFRESH_HOURS": "24",
     "DISCOGS_USER_AGENT": "VinylValueVault/0.1 +https://github.com/JakubMini/vinyl-value-vault",
@@ -50,9 +56,21 @@
     }
   ],
 
-  // The valuation job. Every minute it prices up to VALUATION_BATCH_SIZE records
-  // that are due, longest-waiting first. Once a day the tick syncs the Discogs
-  // collection instead (src/sync.ts), so the two never share one invocation.
+  // The tunnel road out to Discogs (see README, "The road to Discogs"). A Workers VPC
+  // service, `discogs-api`, for api.discogs.com on port 443, reached through the Cloudflare
+  // Tunnel `vinyl-vault-egress`, whose connector runs on a laptop (scripts/egress.ts). Calls
+  // through it leave from that laptop's address. Used only when DISCOGS_ROAD is "tunnel".
+  "vpc_services": [
+    {
+      "binding": "DISCOGS_EGRESS",
+      "service_id": "01a0fd3e-bf71-7072-a308-0d07914661a8"
+    }
+  ],
+
+  // The valuation job. The cron ticks every minute. On the tunnel road every tick prices up
+  // to VALUATION_TUNNEL_BATCH_SIZE records that are due, longest-waiting first; on the pool
+  // road only every fifth tick does, with VALUATION_BATCH_SIZE. Once a day a tick syncs the
+  // Discogs collection instead (src/sync.ts), so the two never share one invocation.
   "triggers": {
     "crons": ["* * * * *"]
   }

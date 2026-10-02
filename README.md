@@ -4,13 +4,13 @@
 
 A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026, behind a Cloudflare Access login. My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)), and for now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built, deployed and in use (see [Who can get in](#who-can-get-in)).
+> **Status:** live on Cloudflare since 2 October 2026, behind a Cloudflare Access login. My collection, 163 records, is in, and syncs from Discogs daily. Discogs calls leave through a Cloudflare Tunnel from my laptop, because from Cloudflare's shared address Discogs mostly says no (see [The road to Discogs](#the-road-to-discogs)), so prices refresh while the laptop is awake. For now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built, deployed and in use (see [Who can get in](#who-can-get-in)).
 
 ## What it does
 
 - **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs.
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
-- **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
+- **Keeps the prices fresh.** Every minute a scheduled job takes up to 15 records whose price is more than a day old and asks Discogs what they are worth today, by way of my laptop. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
 - **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
@@ -27,13 +27,16 @@ flowchart LR
     api["HTTP API, /api<br/>(fetch handler)"]
     job["Scheduled handler<br/>valuation job, and once<br/>a day the collection sync"]
   end
-  job -->|"prices, and the<br/>collection itself"| discogs[("Discogs API")]
+  job -->|"tunnel road"| egress["VPC service<br/>DISCOGS_EGRESS"]
+  egress --> tunnel["Cloudflare Tunnel"] --> laptop["cloudflared<br/>on my laptop"]
+  laptop -->|"prices, and the<br/>collection itself"| discogs[("Discogs API")]
+  job -.->|"pool road: plain fetch,<br/>every five minutes"| discogs
   job <--> d1[("D1 database<br/>SQLite")]
   api <--> d1
   alexa["Alexa skill (later)"] -.-> api
 ```
 
-One Worker, two entry points. The `fetch` handler serves the API; the `scheduled` handler runs the valuation job, and once a day the collection sync in its place. Both reach the same D1 database through a binding, so there is no connection string, no server to keep alive, and nothing running between requests.
+One Worker, two entry points. The `fetch` handler serves the API; the `scheduled` handler runs the valuation job, and once a day the collection sync in its place. Both reach the same D1 database through a binding, so there is no connection string, no server to keep alive, and nothing running between requests. Calls to Discogs normally leave through a Cloudflare Tunnel from my laptop rather than straight from the Worker; [The road to Discogs](#the-road-to-discogs) says why.
 
 The dashboard is a React app that Vite builds into static files, deployed with the Worker. Cloudflare serves those files without running the Worker at all, so page loads are free and unmetered; only `/api/*` reaches the code. Any other path gets the app's `index.html`, so a link to a page inside the dashboard still works after a reload. One origin for the app and the API means no CORS.
 
@@ -63,21 +66,77 @@ The rule that keeps this simple is who owns what. **Discogs owns what a pressing
 
 The Workers free plan allows 50 outbound requests and 10 ms of CPU per invocation. Discogs allows 60 requests a minute, counted per source IP.
 
-That second limit turned out to be the real constraint. The first version ran every five minutes and asked for 20 records, about 40 calls at once. In production Discogs cut it off after about a dozen. Workers send requests from IP addresses shared with other Cloudflare customers, so part of each minute's allowance is often already spent by someone else.
+That second limit turned out to be the real constraint. Discogs' API sits behind Cloudflare, and when a Worker calls a site hosted on another Cloudflare account, Cloudflare gives the request one fixed client address, `2a06:98c0:3600::103` ([Cloudflare's header reference](https://developers.cloudflare.com/fundamentals/reference/http-headers/)). So to Discogs, every Worker on Cloudflare, from every customer, is a single caller with a single allowance of 60 requests a minute. The vault gets whatever is left. On 2 October 2026 most minutes got a 429 on their first call, while the same code on a laptop synced the whole collection in four calls.
 
-The job now works with that rather than against it:
+So the vault's Discogs calls take another road, from an address of their own: see [The road to Discogs](#the-road-to-discogs). Whichever road they take, the job stays inside both limits:
 
-- **Small and frequent.** It runs every minute and prices at most 5 records, so at most 10 calls. Load is spread across the minute instead of bursting.
-- **Only what is due.** A record priced in the last 24 hours is skipped. Once the collection is fresh the job makes no Discogs calls at all, and each record costs two calls a day.
+- **Sized to the road.** On the tunnel road a run prices up to 15 records. A run costs 3 subrequests (two reads and the snapshot) and each record up to 3 (two Discogs calls and one write), so 15 records stay under the 50 a run may make, at no more than 30 Discogs calls a minute. On the pool road a run every five minutes prices up to 5.
+- **Only what is due.** A record priced in the last 24 hours is skipped. Once the collection is fresh the job makes no Discogs calls at all, and each record costs one or two calls a day.
 - **No wasted calls.** If Discogs says the account cannot get price suggestions, the job stops asking for the rest of the batch and uses listing prices.
-- **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits a minute.
-- **The sync takes its own minute.** Once a day the cron syncs the collection instead of pricing records: two calls, plus one per 100 items. A sync that fails or is cut short is retried an hour later, so valuations never wait on it for long.
+- **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits for the next run.
+- **The sync takes its own run.** Once a day the cron syncs the collection instead of pricing records: two calls, plus one per 100 items. A sync that fails or is cut short is retried an hour later, so valuations never wait on it for long.
 
-At best that is 7,200 record prices a day, far more than the daily refresh of a personal collection needs. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
+On the tunnel road that is up to 21,600 record prices a day, and the whole collection takes 11 minutes. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
 
 The database has a budget too: the free plan allows 5 million D1 rows read a day. The dashboard is built to stay far inside it. The collection list reads about three rows per record, using indexes, and the value chart reads one row per day from a small daily table rather than every snapshot the job writes.
 
-Expected running cost at this scale: nothing.
+Expected running cost at this scale: nothing. Cloudflare Tunnel is free, and Workers VPC is free on every plan while it is in beta.
+
+### The road to Discogs
+
+Discogs counts requests by address, so the fix is to call it from an address the vault does not share. Calls take one of two roads, chosen by one setting, `DISCOGS_ROAD`:
+
+| Road | How calls leave | Discogs sees | Runs | Records per run |
+| --- | --- | --- | --- | --- |
+| `tunnel` | The Workers VPC service `DISCOGS_EGRESS`, through the Cloudflare Tunnel `vinyl-vault-egress`, out of `cloudflared` on my laptop | My home address, with the whole allowance | Every minute | 15 |
+| `pool`, the default | A plain `fetch` from the Worker | `2a06:98c0:3600::103`, shared with every Worker | Every five minutes | 5 |
+
+I measured both on 2 October 2026. Through the tunnel, Discogs saw the laptop's address on every call, answered 200, and counted the calls 0, 1, 2. In the same seconds the plain road got a 429 every time, with 60 to 65 calls already counted against the shared address.
+
+The laptop only needs to be awake about 11 minutes a day: 163 records at 15 a minute, and a minute for the sync. While it sleeps the tunnel has no connector, so a call fails at once. The job treats that as "try again next minute": no record is marked as failed, and the dashboard and API carry on with the last prices.
+
+Other ways out, and why not:
+
+- **Cloudflare Gateway egress** (a `cf1:network` binding) also gets past the shared address, but each call leaves from a different address, so Discogs cannot count the vault as one client. Discogs' terms warn against getting around the limit, and the account at stake holds my collection.
+- **GitHub Actions** would cost nothing on this public repo, but GitHub's terms rule out using Actions as part of a running service.
+- **A free cloud VM** can run the connector instead of the laptop. Oracle's Always Free micro VM is the one that is free with no end date and has its own address; it needs a card at sign-up, and Oracle reclaims VMs that sit idle. Google's free VM charges for its public IPv4 address.
+
+#### Switching roads
+
+`DISCOGS_ROAD` is a Worker secret. It is not secret, but a secret survives deploys: a script can change it without deploying, and a deploy cannot change it back. Four commands manage it, each checking first that wrangler is on the vault's Cloudflare account:
+
+```bash
+npm run egress:here     # make this machine the way out, and put the vault on the tunnel road
+npm run egress:pool     # back to the shared address, a run every five minutes
+npm run egress:status   # which road the vault is on, and which machines the tunnel has
+npm run egress:remove   # on a laptop being retired: stop being the way out
+```
+
+`egress:here` installs `cloudflared` with Homebrew if it is missing, fetches the tunnel's connector token through the Cloudflare API, and keeps it in `~/Library/Application Support/vinyl-value-vault/tunnel-token`, readable only by me. It runs `cloudflared` as a launchd agent, so it starts at login and restarts if it stops (log: `~/Library/Logs/vinyl-value-vault-egress.log`). Then it sets `DISCOGS_ROAD=tunnel` and watches the next run to confirm it went through. `egress:pool` sets the road back and removes this machine's connector.
+
+**Moving to a new laptop:** clone the repo, `npm install`, `npx wrangler login`, and `npm run egress:here`. Then run `npm run egress:remove` on the old one. While both are connected, Cloudflare splits the calls between two addresses, which `egress:here` warns about.
+
+**What the laptop can see:** `cloudflared` makes the HTTPS connection to Discogs itself, so it sees the vault's Discogs requests, token included. That is fine on my own laptop, and it is why the connector token stays private: whoever holds it could stand in as the way out.
+
+#### Setting up the road from scratch
+
+This was done once, on 2 October 2026:
+
+```bash
+npx wrangler tunnel create vinyl-vault-egress
+npx wrangler vpc service create discogs-api --type http --tunnel-id <tunnel id> --hostname api.discogs.com
+# put the service id in wrangler.jsonc (vpc_services, binding DISCOGS_EGRESS), deploy, then:
+npm run egress:here
+```
+
+If a laptop that held the token is lost, make the token worthless: delete the tunnel, create it again, and point the same VPC service at the new one. The service id does not change, so `wrangler.jsonc` stays as it is.
+
+```bash
+npx wrangler tunnel delete vinyl-vault-egress
+npx wrangler tunnel create vinyl-vault-egress
+npx wrangler vpc service update <service id> --name discogs-api --type http --tunnel-id <new tunnel id> --hostname api.discogs.com
+npm run egress:here
+```
 
 ## The stack, and why
 
@@ -86,6 +145,7 @@ Expected running cost at this scale: nothing.
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Serverless, globally deployed, generous free tier, and the cron, database and HTTP surface come from one platform. |
 | Database | [D1](https://developers.cloudflare.com/d1/) | A hosted SQLite database with migrations and a binding straight into the Worker. Right-sized for a personal collection. |
 | Scheduling | [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) | A line of config, no scheduler to run. |
+| Way out to Discogs | [Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/) and [Workers VPC](https://developers.cloudflare.com/workers-vpc/) (beta) | Lets the Worker's Discogs calls leave from my laptop's address, with nothing on the laptop open to the internet: the connector only dials out. The Worker keeps all the logic; only the road changes. |
 | Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/), on [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) | One deploy and one origin with the API. Cloudflare's Vite plugin runs the Worker in the real runtime during development, next to the app. [TanStack Query](https://tanstack.com/query) handles fetching and caching; styling is plain CSS with light and dark tokens. Charts are drawn as plain SVG by one small component rather than a charting library. |
 | HTTP | [Hono](https://hono.dev/) | A small, fast, well-typed router built for the Workers runtime. |
 | Sign-in | [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) | A login page for the dashboard without writing one, free for a personal project. The Worker verifies Access's signed token itself, so a misconfiguration locks the door rather than opening it. |
@@ -186,7 +246,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-The dashboard is at `http://localhost:5173` and the API at `http://localhost:5173/api`. There is no Cloudflare Access locally, so in development the dashboard sends the API key from `.env.development.local`; Vite reads that file only in development, so the key never reaches a production build. The cron handler can be fired by hand:
+The dashboard is at `http://localhost:5173` and the API at `http://localhost:5173/api`. There is no Cloudflare Access locally, so in development the dashboard sends the API key from `.env.development.local`; Vite reads that file only in development, so the key never reaches a production build. Locally `DISCOGS_ROAD` is unset, so the vault takes the pool road: a plain `fetch`, which from your machine reaches Discogs from your own address, and a run on every fifth minute. The cron handler can be fired by hand:
 
 ```bash
 curl http://localhost:5173/cdn-cgi/local/scheduled
@@ -210,7 +270,7 @@ curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync
 
 The Worker uses `DISCOGS_TOKEN` to find the Discogs account behind it, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details and cover art from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
 
-New records arrive without a price. Pricing a few hundred records at once would mean a burst of Discogs calls; instead the cron prices them a few at a time, every minute, until all are done.
+New records arrive without a price. Pricing a few hundred records at once would mean a burst of Discogs calls; instead the cron prices them a batch at a time, every minute on the tunnel road, until all are done.
 
 ## Deploying
 
@@ -224,7 +284,9 @@ npx wrangler secret put API_KEY
 npx wrangler secret put DISCOGS_TOKEN
 ```
 
-After that, `npm run deploy` builds the dashboard and the Worker with Vite and ships both. `npx wrangler tail` streams the structured logs, including a summary line from every valuation run and sync.
+The tunnel road came later: see [Setting up the road from scratch](#setting-up-the-road-from-scratch).
+
+After that, `npm run deploy` builds the dashboard and the Worker with Vite and ships both. `npx wrangler tail` streams the structured logs, including a summary line from every valuation run and sync, with the road it took.
 
 ## How I work on this
 
@@ -254,9 +316,11 @@ src/
   grades.ts      Goldmine grades and their Discogs labels
   money.ts       minor-unit helpers
   api-types.ts   response shapes shared by the API and the dashboard
+scripts/
+  egress.ts      the road to Discogs: this laptop as the way out, or back to the pool
 migrations/      D1 schema, numbered and append-only
 test/            Vitest suites running inside workerd
-wrangler.jsonc   Worker config: bindings, vars, cron, static assets
+wrangler.jsonc   Worker config: bindings (D1, the VPC service), vars, cron, static assets
 vite.config.ts   one build for the dashboard and the Worker
 ```
 

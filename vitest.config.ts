@@ -10,6 +10,9 @@ export default defineConfig({
       const migrations = await readD1Migrations(fileURLToPath(new URL("./migrations", import.meta.url)));
       return {
         wrangler: { configPath: "./wrangler.jsonc" },
+        // The DISCOGS_EGRESS VPC service would otherwise open a session to the real account.
+        // Tests never leave the machine: tunnel-road tests pass in their own egress binding.
+        remoteBindings: false,
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,

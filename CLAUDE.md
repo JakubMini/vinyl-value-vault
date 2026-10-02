@@ -34,6 +34,7 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   else, stop and ask Jakub to switch: `npx wrangler logout && npx wrangler login`. Never log in on
   Jakub's behalf.
 - Run wrangler from this repo's root, so it uses this project's `wrangler.jsonc` and Worker name.
+- `npm run egress:*` (`scripts/egress.ts`) checks the account itself and stops if it is wrong.
 - Treat a failed migrate or deploy as a stop. Do not run imports or anything else against the live
   vault until both have succeeded on the right account.
 
@@ -51,7 +52,9 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   `src/access.ts`; the Worker entry in
   `src/index.ts`; the dashboard in `web/` (with `index.html` at the root and static files in
   `public/`), sharing response types through `src/api-types.ts`, which must stay free of Worker
-  types; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
+  types; the road Discogs calls take (`discogsRoad`) in `src/valuation.ts`; laptop-side tools in
+  `scripts/` (today `scripts/egress.ts`, which manages that road), run with Node directly and
+  typechecked by `tsconfig.scripts.json`, so only erasable TypeScript.
 - Discogs owns what a pressing is (artist, title, label, year, format, artwork); the vault owns
   what is said about the copy (grades, notes, purchase details, the Spotify album it is pinned
   to). A sync only ever writes the former to existing records. Keep it that way.
@@ -64,12 +67,18 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   `src/env.d.ts`; secret values are never in the repo (`.dev.vars` locally, `wrangler secret put` in
   production).
 - Respect the Workers free-plan budget: at most 50 outbound fetches and 10 ms CPU per invocation.
-  The cron runs every minute on a batch of 5 records (two Discogs calls each), skipping records priced
-  within `VALUATION_REFRESH_HOURS`. Once a day the tick runs the collection sync instead (2 calls plus
-  one per 100 items). Change `VALUATION_BATCH_SIZE` only with a reason written down.
-- Discogs is rate limited to 60 requests a minute. Always send the User-Agent, always read the
-  rate-limit headers, stop early rather than get throttled.
-- Behaviour changes come with tests. Tests mock Discogs at the network layer with Mock Service Worker (`test/helpers.ts`) and never touch the internet.
+  D1 calls count as subrequests. The cron ticks every minute. On the tunnel road (`DISCOGS_ROAD` is
+  `tunnel`) each tick prices up to `VALUATION_TUNNEL_BATCH_SIZE` (15) records; on the pool road only
+  every fifth tick runs, with `VALUATION_BATCH_SIZE` (5). Records priced within
+  `VALUATION_REFRESH_HOURS` are skipped. Once a day the tick runs the collection sync instead (2 calls
+  plus one per 100 items). Change either batch size only with a reason written down: 15 is the most
+  that fits 50 subrequests when price suggestions are available (3 per run, 3 per record: 48).
+- Discogs is rate limited to 60 requests a minute per client address. Every Worker reaches it from
+  one shared address (`2a06:98c0:3600::103`), which is why the tunnel road exists. Never spread calls
+  over several addresses to get more than 60 a minute. Always send the User-Agent, always read the
+  rate-limit headers, stop early rather than get throttled. A call that never reaches Discogs (the
+  tunnel's laptop is asleep) is transient: stop the run, blame no record.
+- Behaviour changes come with tests. Tests mock Discogs at the network layer with Mock Service Worker (`test/helpers.ts`) and never touch the internet. Remote bindings are off in tests and `vite dev`; tunnel-road tests pass in their own `DISCOGS_EGRESS`.
 - Logs are structured JSON: `console.log(JSON.stringify({ event: "...", ... }))`.
 - Follow Cloudflare's Workers best practices: no request state in module scope, no floating
   promises, `ctx.waitUntil` for background work, timing-safe secret comparison (`timingSafeEqual`
@@ -87,6 +96,8 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 | `npm test` | Tests only. |
 | `npm run db:migrate:local` / `db:migrate:remote` | Apply migrations locally / in production. |
 | `npm run deploy` | Build, then deploy to Cloudflare. |
+| `npm run egress:here` / `egress:pool` | Make this laptop the Discogs way out (tunnel road) / go back to the shared address, every five minutes. |
+| `npm run egress:status` / `egress:remove` | Which road and which machines are connected / stop this laptop being the way out. |
 
 The Discogs collection syncs itself once a day. To sync now, `POST /api/sync/discogs` (add
 `?dry_run=true` to preview); see the README.

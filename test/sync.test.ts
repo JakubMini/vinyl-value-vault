@@ -1,13 +1,12 @@
-import { createExecutionContext, createScheduledController, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { staleRecords } from "../src/db";
-import worker from "../src/index";
 import { syncCollection, syncDue } from "../src/sync";
 import {
   api,
   collectionItem,
+  cronTick,
   expectAllMocksUsed,
   mockCollection,
   mockCollectionPage,
@@ -257,15 +256,10 @@ describe("when the cron syncs", () => {
 
   it("syncs on the first tick of the day and prices records on the next", async () => {
     const due = await seedRecord({ artist: "Nirvana", title: "Nevermind", discogs_release_id: 249504 });
-    const tick = async () => {
-      const ctx = createExecutionContext();
-      await worker.scheduled(createScheduledController({ cron: "* * * * *" }), env, ctx);
-      await waitOnExecutionContext(ctx);
-    };
 
     // First tick: no sync has ever run, so it syncs and makes no valuation calls.
     mockCollection([collectionItem(1)]);
-    await tick();
+    await cronTick();
     const runs = await env.DB.prepare("SELECT source, status, added FROM sync_runs").all();
     expect(runs.results).toEqual([{ source: "cron", status: "ok", added: 1 }]);
     expect((await env.DB.prepare("SELECT last_valued_at FROM records WHERE id = ?").bind(due.id).first())?.last_valued_at).toBeNull();
@@ -275,7 +269,7 @@ describe("when the cron syncs", () => {
     mockSuggestions(249504, { "Very Good Plus (VG+)": { currency: "GBP", value: 25 } });
     mockStats(1_000_001, { lowest_price: { currency: "GBP", value: 10 }, num_for_sale: 1, blocked_from_sale: false });
     mockSuggestions(1_000_001, { "Very Good Plus (VG+)": { currency: "GBP", value: 12 } });
-    await tick();
+    await cronTick();
     const valued = await env.DB.prepare("SELECT COUNT(*) AS n FROM records WHERE current_value_minor IS NOT NULL").first<{ n: number }>();
     expect(valued?.n).toBe(2);
   });
