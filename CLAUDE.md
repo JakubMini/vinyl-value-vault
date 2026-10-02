@@ -43,7 +43,7 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   a reason written down.
 - Discogs is rate limited to 60 requests a minute. Always send the User-Agent, always read the
   rate-limit headers, stop early rather than get throttled.
-- Behaviour changes come with tests. Tests mock Discogs with `fetchMock` and never touch the network.
+- Behaviour changes come with tests. Tests mock Discogs at the network layer with Mock Service Worker (`test/helpers.ts`) and never touch the internet.
 - Logs are structured JSON: `console.log(JSON.stringify({ event: "...", ... }))`.
 - Follow Cloudflare's Workers best practices: no request state in module scope, no floating
   promises, `ctx.waitUntil` for background work, timing-safe secret comparison (Hono's bearerAuth
