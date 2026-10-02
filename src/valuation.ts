@@ -3,9 +3,11 @@
  *
  * Each run takes the records that have gone longest without a price and asks
  * Discogs what they are worth. For a record graded VG+ the headline value is
- * Discogs' suggested price for a VG+ copy. When suggestions are unavailable
- * (no token, or the account has no seller settings) the cheapest copy
- * currently listed is used instead, and the method is recorded so the two are
+ * Discogs' suggested price for a VG+ copy, which Discogs works out from the
+ * release's sales history. When there is no suggestion to use (no token, no
+ * seller settings, a selling currency other than ours, or too few sales of the
+ * release) the cheapest copy currently listed is used instead: an asking price
+ * in any grade, so a much rougher figure. The method is recorded so the two are
  * never confused.
  *
  * How much a run takes on depends on the road (see discogsRoad below). Discogs
@@ -17,6 +19,7 @@
  * stops early when the window is nearly spent, and records priced within
  * VALUATION_REFRESH_HOURS are skipped, so a fresh collection costs no calls.
  */
+import type { SuggestionState } from "./api-types";
 import {
   type RecordPatch,
   type RecordRow,
@@ -36,10 +39,24 @@ export type ValuationOutcome =
   | { status: "valued"; recordId: number; valueMinor: number; method: "price_suggestion" | "lowest_listing" }
   | { status: "unpriced"; recordId: number; reason: string };
 
+/** Why a batch stopped asking Discogs for suggestions: the answer would be the same for every release. */
+export type SuggestionsSkipped = "unavailable" | "wrong_currency";
+
 /** Options for one valuation. `suggestions` is shared across a batch. */
 export interface ValueOptions {
-  /** Set to false once Discogs has said suggestions are unavailable for this account, to save a call per record. */
-  suggestions?: { available: boolean };
+  /**
+   * Set to false once Discogs has shown it will give this account no suggestions we can use, to
+   * save a call per record. `reason` says why, and is stored with each valuation that skipped.
+   */
+  suggestions?: { available: boolean; reason?: SuggestionsSkipped };
+}
+
+/** What a valuation stores as its raw payload. */
+interface StoredPayload {
+  stats?: unknown;
+  suggestions?: PriceSuggestions | null;
+  /** Present when the batch did not ask for suggestions for this record, and why. */
+  suggestions_skipped?: SuggestionsSkipped;
 }
 
 export interface BatchSummary {
@@ -50,6 +67,8 @@ export interface BatchSummary {
   errors: number;
   stoppedEarly: boolean;
   reason?: string;
+  /** Set when the batch stopped asking for price suggestions, and why. */
+  suggestionsSkipped?: SuggestionsSkipped;
   /** Discogs' X-Discogs-Ratelimit-Remaining after the last call, or null if none was made. */
   rateLimitRemaining: number | null;
   snapshot?: SnapshotRow;
@@ -112,16 +131,23 @@ export async function valueRecord(
   }
 
   // The release exists (stats answered), so a null here means the account cannot get
-  // suggestions at all: no token, or seller settings missing. Stop asking for this batch.
+  // suggestions at all: no token, or seller settings missing. Suggestions in another currency
+  // mean the account sells in that currency, so every release would answer the same way.
+  // Either way, stop asking for this batch. An empty answer is about this release only.
   const share = options.suggestions ?? { available: true };
-  const suggestions = share.available ? await discogs.getPriceSuggestions(releaseId) : null;
-  if (suggestions === null) share.available = false;
-  const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[record.media_condition]];
+  const skipped = share.available ? undefined : (share.reason ?? "unavailable");
+  const suggestions = skipped ? null : await discogs.getPriceSuggestions(releaseId);
+  const state = suggestionState(suggestions, currency);
+  if (!skipped && (state === "unavailable" || state === "wrong_currency")) {
+    share.available = false;
+    share.reason = state;
+  }
+  const suggestion = suggestionFor(suggestions, record.media_condition, currency);
   const lowest = stats.lowest_price && stats.lowest_price.currency === currency ? toMinor(stats.lowest_price.value) : null;
 
   let value: { minor: number; method: "price_suggestion" | "lowest_listing" } | null = null;
-  if (suggestion && suggestion.currency === currency) {
-    value = { minor: toMinor(suggestion.value), method: "price_suggestion" };
+  if (suggestion !== null) {
+    value = { minor: suggestion, method: "price_suggestion" };
   } else if (lowest !== null) {
     value = { minor: lowest, method: "lowest_listing" };
   }
@@ -142,9 +168,40 @@ export async function valueRecord(
     lowest_listing_minor: lowest,
     num_for_sale: stats.num_for_sale,
     media_condition: record.media_condition,
-    raw: { stats, suggestions },
+    raw: { stats, suggestions, ...(skipped ? { suggestions_skipped: skipped } : {}) } satisfies StoredPayload,
   });
   return { status: "valued", recordId: record.id, valueMinor: value.minor, method: value.method };
+}
+
+/**
+ * What Discogs' answer to a suggestions call gives the vault to work with:
+ *
+ * - available:      at least one grade has a price in `currency`
+ * - unavailable:    no answer (null): no token, or no seller settings on the account
+ * - no_data:        an empty answer: Discogs has too few sales of this release to suggest a price
+ * - wrong_currency: prices, but none in `currency`, because the account sells in another one
+ */
+export function suggestionState(suggestions: PriceSuggestions | null | undefined, currency: string): SuggestionState {
+  if (!suggestions) return "unavailable";
+  const prices = Object.values(suggestions);
+  if (prices.length === 0) return "no_data";
+  return prices.some((price) => price.currency === currency) ? "available" : "wrong_currency";
+}
+
+/** The suggestion for one grade, in minor units, or null if there is none in `currency`. */
+function suggestionFor(suggestions: PriceSuggestions | null | undefined, grade: Grade, currency: string): number | null {
+  const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[grade]];
+  return suggestion && suggestion.currency === currency ? toMinor(suggestion.value) : null;
+}
+
+/** A stored valuation's raw payload, or null when there is none or it cannot be read. */
+function readPayload(raw: string | null): StoredPayload | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredPayload;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -153,30 +210,24 @@ export async function valueRecord(
  * no entry for that grade, or an entry in another currency.
  */
 export function suggestedValue(raw: string | null, grade: Grade, currency: string): number | null {
-  if (!raw) return null;
-  let suggestions: PriceSuggestions | null | undefined;
-  try {
-    suggestions = (JSON.parse(raw) as { suggestions?: PriceSuggestions | null }).suggestions;
-  } catch {
-    return null;
-  }
-  const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[grade]];
-  return suggestion && suggestion.currency === currency ? toMinor(suggestion.value) : null;
+  return suggestionFor(readPayload(raw)?.suggestions, grade, currency);
+}
+
+/** Whether a stored valuation had suggestions to go on, and if not, why not. See suggestionState. */
+export function storedSuggestionState(raw: string | null, currency: string): SuggestionState {
+  const payload = readPayload(raw);
+  return payload?.suggestions_skipped ?? suggestionState(payload?.suggestions, currency);
 }
 
 /**
- * What a copy is worth at every grade, from a stored valuation's suggestions. Null when the
- * payload has no suggestions at all, which is the case when the price came from the cheapest
- * listing because Discogs would not give this account suggestions.
+ * What a copy is worth at every grade, from a stored valuation's suggestions. Null unless the
+ * payload has suggestions in `currency`: when it has none, the price came from the cheapest
+ * listing, and storedSuggestionState says why.
  */
 export function priceByGrade(raw: string | null, currency: string): { grade: Grade; value_minor: number | null }[] | null {
-  if (!raw) return null;
-  try {
-    if (!(JSON.parse(raw) as { suggestions?: unknown }).suggestions) return null;
-  } catch {
-    return null;
-  }
-  return GRADES.map((grade) => ({ grade, value_minor: suggestedValue(raw, grade, currency) }));
+  const suggestions = readPayload(raw)?.suggestions;
+  if (suggestionState(suggestions, currency) !== "available") return null;
+  return GRADES.map((grade) => ({ grade, value_minor: suggestionFor(suggestions, grade, currency) }));
 }
 
 /**
@@ -204,7 +255,7 @@ export async function runValuationBatch(env: Env, options: { limit?: number; now
   const refreshHours = Math.max(0, Number(env.VALUATION_REFRESH_HOURS) || 24);
   const dueBefore = new Date(nowDate.getTime() - refreshHours * 3_600_000).toISOString();
   const discogs = discogsFromEnv(env);
-  const suggestions = { available: true };
+  const suggestions: NonNullable<ValueOptions["suggestions"]> = { available: true };
 
   const records = await staleRecords(env.DB, limit, dueBefore);
   const summary: BatchSummary = {
@@ -241,6 +292,7 @@ export async function runValuationBatch(env: Env, options: { limit?: number; now
   }
 
   summary.rateLimitRemaining = discogs.rateLimitRemaining;
+  if (!suggestions.available) summary.suggestionsSkipped = suggestions.reason;
   if (summary.valued > 0) summary.snapshot = await writeSnapshot(env.DB, currency, now);
   return summary;
 }

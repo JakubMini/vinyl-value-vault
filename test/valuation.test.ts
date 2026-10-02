@@ -9,6 +9,17 @@ const NEVERMIND = 249504;
 const DUMMY = 2371512;
 
 const gbp = (value: number) => ({ currency: "GBP", value });
+const eur = (value: number) => ({ currency: "EUR", value });
+
+interface Detail {
+  valuations: { method: string; value_minor: number; lowest_listing_minor: number; num_for_sale: number }[];
+  suggestions: string | null;
+  price_by_grade: { grade: string; value_minor: number | null }[] | null;
+}
+
+async function detail(id: number): Promise<Detail> {
+  return (await (await api(`/records/${id}`)).json()) as Detail;
+}
 
 beforeEach(resetDatabase);
 afterEach(expectAllMocksUsed);
@@ -66,18 +77,42 @@ describe("valuing a record", () => {
     const body = (await res.json()) as { outcome: unknown; record: { current_value_minor: number } };
     expect(body.outcome).toMatchObject({ status: "valued", valueMinor: 3250, method: "price_suggestion" });
 
-    const detail = (await (await api(`/records/${seeded.id}`)).json()) as { valuations: { method: string; value_minor: number; lowest_listing_minor: number; num_for_sale: number }[] };
-    expect(detail.valuations).toHaveLength(1);
-    expect(detail.valuations[0]).toMatchObject({ method: "price_suggestion", value_minor: 3250, lowest_listing_minor: 1850, num_for_sale: 42 });
+    const { valuations, suggestions, price_by_grade } = await detail(seeded.id);
+    expect(valuations).toHaveLength(1);
+    expect(valuations[0]).toMatchObject({ method: "price_suggestion", value_minor: 3250, lowest_listing_minor: 1850, num_for_sale: 42 });
+    expect(suggestions).toBe("available");
+    expect(price_by_grade).toContainEqual({ grade: "NM", value_minor: 3250 });
   });
 
-  it("falls back to the cheapest listing when Discogs will not suggest a price", async () => {
+  it("falls back to the cheapest listing when the account has no seller settings", async () => {
     const seeded = await seedRecord({ artist: "Portishead", title: "Dummy", discogs_release_id: DUMMY });
     mockStats(DUMMY, { lowest_price: gbp(18.5), num_for_sale: 3, blocked_from_sale: false });
-    mockSuggestions(DUMMY, { message: "You must have seller settings to use this resource." }, 403);
+    // What Discogs actually answers in that case.
+    mockSuggestions(DUMMY, { message: "You must fill out your seller settings first." }, 404);
 
     const body = (await (await api(`/records/${seeded.id}/revalue`, { method: "POST" })).json()) as { outcome: unknown };
     expect(body.outcome).toMatchObject({ status: "valued", valueMinor: 1850, method: "lowest_listing" });
+    expect(await detail(seeded.id)).toMatchObject({ suggestions: "unavailable", price_by_grade: null });
+  });
+
+  it("falls back to the cheapest listing when Discogs has no suggestion for the release", async () => {
+    const seeded = await seedRecord({ artist: "Portishead", title: "Dummy", discogs_release_id: DUMMY });
+    mockStats(DUMMY, { lowest_price: gbp(18.5), num_for_sale: 3, blocked_from_sale: false });
+    mockSuggestions(DUMMY, {});
+
+    const body = (await (await api(`/records/${seeded.id}/revalue`, { method: "POST" })).json()) as { outcome: unknown };
+    expect(body.outcome).toMatchObject({ status: "valued", valueMinor: 1850, method: "lowest_listing" });
+    expect(await detail(seeded.id)).toMatchObject({ suggestions: "no_data", price_by_grade: null });
+  });
+
+  it("does not use suggestions in a currency other than the vault's, and says so", async () => {
+    const seeded = await seedRecord({ artist: "Portishead", title: "Dummy", discogs_release_id: DUMMY });
+    mockStats(DUMMY, { lowest_price: gbp(18.5), num_for_sale: 3, blocked_from_sale: false });
+    mockSuggestions(DUMMY, { "Very Good Plus (VG+)": eur(25), "Near Mint (NM or M-)": eur(32.5) });
+
+    const body = (await (await api(`/records/${seeded.id}/revalue`, { method: "POST" })).json()) as { outcome: unknown };
+    expect(body.outcome).toMatchObject({ status: "valued", valueMinor: 1850, method: "lowest_listing" });
+    expect(await detail(seeded.id)).toMatchObject({ suggestions: "wrong_currency", price_by_grade: null });
   });
 
   it("keeps the last value and notes why when nothing is for sale", async () => {
@@ -160,9 +195,43 @@ describe("the scheduled valuation job", () => {
     mockSuggestions(1001, { message: "You must fill out your seller settings first." }, 404);
 
     const summary = await runValuationBatch(env);
-    expect(summary).toMatchObject({ considered: 3, valued: 3, errors: 0, stoppedEarly: false });
+    expect(summary).toMatchObject({ considered: 3, valued: 3, errors: 0, stoppedEarly: false, suggestionsSkipped: "unavailable" });
     const methods = await env.DB.prepare("SELECT DISTINCT method FROM valuations").all();
     expect(methods.results).toEqual([{ method: "lowest_listing" }]);
+  });
+
+  it("stops asking for price suggestions once they come back in another currency", async () => {
+    const records = [];
+    for (const id of [1001, 1002]) {
+      records.push(await seedRecord({ artist: "A", title: `Release ${id}`, discogs_release_id: id }));
+      mockStats(id, { lowest_price: gbp(10), num_for_sale: 1, blocked_from_sale: false });
+    }
+    // The selling currency is the account's, so the second record is not asked about.
+    mockSuggestions(1001, { "Very Good Plus (VG+)": eur(12) });
+
+    const summary = await runValuationBatch(env);
+    expect(summary).toMatchObject({ considered: 2, valued: 2, errors: 0, suggestionsSkipped: "wrong_currency" });
+    for (const record of records) {
+      expect(await detail(record.id)).toMatchObject({ suggestions: "wrong_currency", price_by_grade: null });
+    }
+  });
+
+  it("keeps asking for price suggestions when one release has none", async () => {
+    await seedRecord({ artist: "A", title: "Rarely sold", discogs_release_id: 1001 });
+    await seedRecord({ artist: "B", title: "Often sold", discogs_release_id: 1002 });
+    mockStats(1001, { lowest_price: gbp(10), num_for_sale: 1, blocked_from_sale: false });
+    mockSuggestions(1001, {});
+    mockStats(1002, { lowest_price: gbp(10), num_for_sale: 30, blocked_from_sale: false });
+    mockSuggestions(1002, { "Very Good Plus (VG+)": gbp(14) });
+
+    const summary = await runValuationBatch(env);
+    expect(summary).toMatchObject({ considered: 2, valued: 2, errors: 0 });
+    expect(summary.suggestionsSkipped).toBeUndefined();
+    const methods = await env.DB.prepare("SELECT method, value_minor FROM valuations ORDER BY value_minor").all();
+    expect(methods.results).toEqual([
+      { method: "lowest_listing", value_minor: 1000 },
+      { method: "price_suggestion", value_minor: 1400 },
+    ]);
   });
 
   it("stops the run when Discogs starts rate limiting, leaving the rest for next time", async () => {
