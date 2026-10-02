@@ -11,6 +11,9 @@
  * Discogs allows 60 requests a minute with a token, 25 without, and asks for a
  * descriptive User-Agent. The client reads the rate-limit headers so the caller
  * can stop before hitting the ceiling.
+ *
+ * Requests go out through `fetch` by default, or through the one passed in: the
+ * tunnel road's VPC service binding, which sends them out from another machine.
  */
 import type { CollectionItem, Release } from "./release";
 
@@ -54,6 +57,8 @@ export interface DiscogsClientOptions {
   token?: string;
   userAgent: string;
   baseUrl?: string;
+  /** How requests leave the Worker. The global `fetch` when not given. */
+  fetch?: (url: URL, init: RequestInit) => Promise<Response>;
 }
 
 export class DiscogsClient {
@@ -116,7 +121,16 @@ export class DiscogsClient {
     };
     if (this.options.token) headers.Authorization = `Discogs token=${this.options.token}`;
 
-    const response = await fetch(url, { headers });
+    let response: Response;
+    try {
+      response = await (this.options.fetch ?? fetch)(url, { headers });
+    } catch (error) {
+      // The request never reached Discogs. On the tunnel road that means the machine running
+      // the tunnel's connector is asleep or offline. Transient: nothing is wrong with the
+      // record, so the caller stops and the next run tries again.
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new DiscogsError(503, `Could not reach Discogs for ${url.pathname}: ${reason}`);
+    }
 
     const remaining = response.headers.get("X-Discogs-Ratelimit-Remaining");
     if (remaining !== null && remaining !== "") this.rateLimitRemaining = Number(remaining);

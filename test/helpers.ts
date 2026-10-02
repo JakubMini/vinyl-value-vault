@@ -1,7 +1,9 @@
+import { createExecutionContext, createScheduledController, waitOnExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { type JsonBodyType, http, HttpResponse } from "msw";
 import { expect } from "vitest";
 
+import worker from "../src/index";
 import type { CollectionItem } from "../src/release";
 import { network } from "./network";
 
@@ -154,6 +156,18 @@ export function expectAllMocksUsed(): void {
   const unused = [...pending];
   pending.clear();
   expect(unused, "Discogs calls that were expected but never made").toEqual([]);
+}
+
+/** The most recent five-minute mark: a tick the pool road, the default in tests, acts on. */
+export function lastFiveMinuteMark(): Date {
+  return new Date(Math.floor(Date.now() / 300_000) * 300_000);
+}
+
+/** One cron tick through the real scheduled handler, scheduled for `at`. */
+export async function cronTick(at: Date = lastFiveMinuteMark(), tickEnv: Env = env): Promise<void> {
+  const ctx = createExecutionContext();
+  await worker.scheduled(createScheduledController({ cron: "* * * * *", scheduledTime: at }), tickEnv, ctx);
+  await waitOnExecutionContext(ctx);
 }
 
 /** Record a successful collection sync, so the next cron tick prices records instead of syncing. */

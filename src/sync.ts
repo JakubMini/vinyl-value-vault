@@ -25,7 +25,7 @@ import {
 } from "./db";
 import { DiscogsError } from "./discogs";
 import { type ImportedRecord, collectionFieldIds, collectionItemToRecord, isVinyl } from "./release";
-import { discogsFromEnv } from "./valuation";
+import { discogsFromEnv, discogsRoad } from "./valuation";
 
 /** A successful sync is good for this long. */
 export const SYNC_EVERY_HOURS = 24;
@@ -154,7 +154,7 @@ export async function syncCollection(env: Env, options: SyncOptions): Promise<Sy
   }
 
   const run = await finishSyncRun(env.DB, runId, { ...counts, finished_at: new Date().toISOString(), status, note });
-  const log = JSON.stringify({ event: "sync.run", ...run });
+  const log = JSON.stringify({ event: "sync.run", road: discogsRoad(env), ...run });
   if (status === "failed") console.error(log);
   else console.log(log);
   return run;
