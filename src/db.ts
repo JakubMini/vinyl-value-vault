@@ -23,6 +23,10 @@ export interface RecordRow {
   current_currency: string | null;
   last_valued_at: string | null;
   last_valuation_error: string | null;
+  /** How the current value was found, and the market behind it, rolled up from the latest valuation like the value itself. */
+  current_method: "price_suggestion" | "lowest_listing" | null;
+  current_lowest_listing_minor: number | null;
+  current_num_for_sale: number | null;
   cover_image_url: string | null;
   thumb_url: string | null;
   discogs_added_at: string | null;
@@ -210,8 +214,10 @@ export async function latestDiscogsValuation(db: D1Database, recordId: number): 
 /**
  * Apply a patch that changes the media grade. With a value for the new grade (worked out from
  * stored suggestions), it is recorded as a 'regrade' valuation and becomes the current value,
- * in one transaction. Either way last_valued_at is cleared, which puts the record at the front
- * of the valuation queue so the cron confirms the price with fresh data.
+ * in one transaction; the record's market figures stay those of the Discogs price it came
+ * from, and its method becomes a suggestion, which is what a regrade is. Either way
+ * last_valued_at is cleared, which puts the record at the front of the valuation queue so the
+ * cron confirms the price with fresh data.
  */
 export async function regradeRecord(
   db: D1Database,
@@ -224,8 +230,15 @@ export async function regradeRecord(
   assignments.push("last_valued_at = NULL", "updated_at = ?");
   values.push(now);
   if (value) {
-    assignments.push("current_value_minor = ?", "current_currency = ?", "last_valuation_error = NULL");
-    values.push(value.value_minor, value.currency);
+    assignments.push(
+      "current_value_minor = ?",
+      "current_currency = ?",
+      "current_method = 'price_suggestion'",
+      "current_lowest_listing_minor = ?",
+      "current_num_for_sale = ?",
+      "last_valuation_error = NULL",
+    );
+    values.push(value.value_minor, value.currency, value.lowest_listing_minor, value.num_for_sale);
   }
   const update = db.prepare(`UPDATE records SET ${assignments.join(", ")} WHERE id = ? RETURNING *`).bind(...values, id);
   if (!value) return update.first<RecordRow>();
@@ -329,10 +342,11 @@ export async function recordValuation(db: D1Database, v: NewValuation): Promise<
     db
       .prepare(
         `UPDATE records
-         SET current_value_minor = ?, current_currency = ?, last_valued_at = ?, last_valuation_error = NULL, updated_at = ?
+         SET current_value_minor = ?, current_currency = ?, current_method = ?, current_lowest_listing_minor = ?, current_num_for_sale = ?,
+             last_valued_at = ?, last_valuation_error = NULL, updated_at = ?
          WHERE id = ?`,
       )
-      .bind(v.value_minor, v.currency, v.valued_at, v.valued_at, v.record_id),
+      .bind(v.value_minor, v.currency, v.method, v.lowest_listing_minor, v.num_for_sale, v.valued_at, v.valued_at, v.record_id),
   ]);
 }
 

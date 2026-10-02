@@ -66,10 +66,10 @@ function Header({ record: r }: { record: RecordDetail }) {
 function ValueCard({ record: r }: { record: RecordDetail }) {
   const revalue = useRevalue(r.id);
   const how =
-    r.latest_method === "lowest_listing"
-      ? cheapest(r.valuations[0]?.num_for_sale ?? null)
-      : r.latest_method === "price_suggestion"
-        ? `Discogs' suggested price for ${article(r.media_condition)} ${r.media_condition} copy, based on its sales history.`
+    r.current_method === "lowest_listing"
+      ? cheapest(r.current_num_for_sale)
+      : r.current_method === "price_suggestion"
+        ? `Discogs' suggested price for ${article(r.media_condition)} ${r.media_condition} copy, based on its sales history. ${market(r)}`.trim()
         : null;
 
   let result: string | null = null;
@@ -120,6 +120,14 @@ function ValueCard({ record: r }: { record: RecordDetail }) {
 /** "an M", "an NM", "an F", but "a VG+": grades are read out letter by letter. */
 function article(grade: Grade): string {
   return /^[MNF]/.test(grade) ? "an" : "a";
+}
+
+/** The market behind a suggested price: how many copies are up for sale, and from how much. */
+function market(r: RecordDetail): string {
+  if (r.current_num_for_sale === null) return "";
+  if (r.current_num_for_sale === 0) return "None for sale right now.";
+  const from = r.current_lowest_listing_minor !== null && r.current_currency ? `, from ${formatMinor(r.current_lowest_listing_minor, r.current_currency)}` : "";
+  return `${count(r.current_num_for_sale)} ${r.current_num_for_sale === 1 ? "copy" : "copies"} for sale${from}.`;
 }
 
 /** How a value taken from the cheapest listing is described: it is what a seller asks, not what a copy sold for. */
