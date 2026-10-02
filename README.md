@@ -4,7 +4,7 @@
 
 A small serverless backend that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/health)). The collection itself is still to be imported. See the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). The collection itself is still to be imported. See the [roadmap](#roadmap).
 
 ## What it does
 
@@ -84,25 +84,25 @@ The schema is in [`migrations/`](migrations/), one numbered file per change.
 
 ## API
 
-Every route except `/health` requires `Authorization: Bearer <API_KEY>`. Responses are JSON. Amounts are in minor units, with a formatted string alongside where it helps.
+Every route lives under `/api`, which leaves the rest of the hostname free for the dashboard. Every route except `/api/health` requires `Authorization: Bearer <API_KEY>`. Responses are JSON. Amounts are in minor units, with a formatted string alongside where it helps.
 
 | Method and path | What it does |
 | --- | --- |
-| `GET /health` | Liveness check. No key needed. |
-| `GET /collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
-| `GET /records?limit=&offset=` | The collection, alphabetical. |
-| `POST /records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
-| `GET /records/:id` | One record with its valuation history. |
-| `PATCH /records/:id` | Change any field a client may set. |
-| `DELETE /records/:id` | Remove a record and its history. |
-| `POST /records/:id/revalue` | Price one record now. |
-| `POST /valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
-| `GET /snapshots?limit=` | The collection total over time. |
+| `GET /api/health` | Liveness check. No key needed. |
+| `GET /api/collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
+| `GET /api/records?limit=&offset=` | The collection, alphabetical. |
+| `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
+| `GET /api/records/:id` | One record with its valuation history. |
+| `PATCH /api/records/:id` | Change any field a client may set. |
+| `DELETE /api/records/:id` | Remove a record and its history. |
+| `POST /api/records/:id/revalue` | Price one record now. |
+| `POST /api/valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
+| `GET /api/snapshots?limit=` | The collection total over time. |
 
 Adding a record by its Discogs id:
 
 ```bash
-curl -s -X POST http://localhost:8787/records \
+curl -s -X POST http://localhost:8787/api/records \
   -H "Authorization: Bearer $API_KEY" \
   -H "content-type: application/json" \
   -d '{"discogs_release_id": 249504, "media_condition": "VG+", "sleeve_condition": "VG", "purchase_price_minor": 1800, "purchase_currency": "GBP"}'
@@ -140,7 +140,7 @@ npm run db:migrate:local
 npm run dev
 ```
 
-The API is at `http://localhost:8787`. The dev server runs with `--test-scheduled`, so the cron handler can be fired by hand:
+The API is at `http://localhost:8787/api`. The dev server runs with `--test-scheduled`, so the cron handler can be fired by hand:
 
 ```bash
 curl http://localhost:8787/__scheduled

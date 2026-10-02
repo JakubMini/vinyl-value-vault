@@ -57,7 +57,7 @@ async function discogs<T>(path: string): Promise<T> {
 }
 
 async function vault(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${vaultUrl}${path}`, {
+  return fetch(`${vaultUrl}/api${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json", ...init.headers },
   });
@@ -121,5 +121,5 @@ for (const item of vinyl) {
 
 console.log(`Created ${created}, already there ${skipped}, failed ${failed.length}.`);
 for (const f of failed) console.log(`  failed: ${f}`);
-if (created > 0) console.log("The valuation cron prices a few records every minute; check GET /collection.");
+if (created > 0) console.log("The valuation cron prices a few records every minute; check GET /api/collection.");
 process.exit(failed.length > 0 ? 1 : 0);
