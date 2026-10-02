@@ -42,7 +42,12 @@ export interface ValuationRow {
   lowest_listing_minor: number | null;
   num_for_sale: number | null;
   raw: string | null;
+  /** The media grade the price was for. */
+  media_condition: Grade | null;
 }
+
+/** A valuation without its raw Discogs payload, for showing history. */
+export type ValuationPoint = Omit<ValuationRow, "raw">;
 
 export interface SnapshotRow {
   id: number;
@@ -199,7 +204,7 @@ export async function latestDiscogsValuation(db: D1Database, recordId: number): 
 export async function regradeRecord(
   db: D1Database,
   id: number,
-  patch: RecordPatch,
+  patch: RecordPatch & { media_condition: Grade },
   value: { value_minor: number; currency: string; lowest_listing_minor: number | null; num_for_sale: number | null } | null,
   now: string,
 ): Promise<RecordRow | null> {
@@ -216,10 +221,10 @@ export async function regradeRecord(
   const [, updated] = await db.batch<RecordRow>([
     db
       .prepare(
-        `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, raw)
-         VALUES (?, ?, 'regrade', 'price_suggestion', ?, ?, ?, ?, NULL)`,
+        `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, media_condition, raw)
+         VALUES (?, ?, 'regrade', 'price_suggestion', ?, ?, ?, ?, ?, NULL)`,
       )
-      .bind(id, now, value.currency, value.value_minor, value.lowest_listing_minor, value.num_for_sale),
+      .bind(id, now, value.currency, value.value_minor, value.lowest_listing_minor, value.num_for_sale, patch.media_condition),
     update,
   ]);
   return updated?.results[0] ?? null;
@@ -267,6 +272,7 @@ export interface NewValuation {
   value_minor: number;
   lowest_listing_minor: number | null;
   num_for_sale: number | null;
+  media_condition: Grade;
   raw: unknown;
 }
 
@@ -275,10 +281,20 @@ export async function recordValuation(db: D1Database, v: NewValuation): Promise<
   await db.batch([
     db
       .prepare(
-        `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, raw)
-         VALUES (?, ?, 'discogs', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, media_condition, raw)
+         VALUES (?, ?, 'discogs', ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .bind(v.record_id, v.valued_at, v.method, v.currency, v.value_minor, v.lowest_listing_minor, v.num_for_sale, JSON.stringify(v.raw)),
+      .bind(
+        v.record_id,
+        v.valued_at,
+        v.method,
+        v.currency,
+        v.value_minor,
+        v.lowest_listing_minor,
+        v.num_for_sale,
+        v.media_condition,
+        JSON.stringify(v.raw),
+      ),
     db
       .prepare(
         `UPDATE records
@@ -297,11 +313,15 @@ export async function recordValuationFailure(db: D1Database, recordId: number, r
     .run();
 }
 
-export async function listValuations(db: D1Database, recordId: number, limit: number): Promise<ValuationRow[]> {
+/** A record's price history, newest first, without the raw payloads. */
+export async function listValuations(db: D1Database, recordId: number, limit: number): Promise<ValuationPoint[]> {
   const { results } = await db
-    .prepare("SELECT * FROM valuations WHERE record_id = ? ORDER BY valued_at DESC, id DESC LIMIT ?")
+    .prepare(
+      `SELECT id, record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, media_condition
+       FROM valuations WHERE record_id = ? ORDER BY valued_at DESC, id DESC LIMIT ?`,
+    )
     .bind(recordId, limit)
-    .all<ValuationRow>();
+    .all<ValuationPoint>();
   return results;
 }
 

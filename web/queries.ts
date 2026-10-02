@@ -1,7 +1,7 @@
 /** Every request the dashboard makes, as TanStack Query hooks, so caching and refetching live in one place. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ApiRecord, CollectionResponse, ListedRecord, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
+import type { ApiRecord, CollectionResponse, ListedRecord, RecordDetail, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
 import { ApiError, api } from "./api";
 
 export const keys = {
@@ -22,7 +22,39 @@ export function useRecords() {
   });
 }
 
-type RecordPatch = Partial<Pick<ApiRecord, "media_condition" | "sleeve_condition" | "purchase_price_minor" | "purchase_currency" | "purchased_on" | "notes">>;
+export function useRecord(id: number) {
+  return useQuery({ queryKey: ["record", id], queryFn: () => api<RecordDetail>(`/records/${id}`) });
+}
+
+export type RevalueOutcome =
+  | { status: "valued"; recordId: number; valueMinor: number; method: "price_suggestion" | "lowest_listing" }
+  | { status: "unpriced"; recordId: number; reason: string };
+
+/** Ask Discogs for a price now. Discogs refusing (often, from Cloudflare) is an error the page explains. */
+export function useRevalue(id: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ outcome: RevalueOutcome; record: ApiRecord }>(`/records/${id}/revalue`, { method: "POST" }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: ["record", id] });
+      void client.invalidateQueries({ queryKey: keys.records });
+      void client.invalidateQueries({ queryKey: keys.collection });
+    },
+  });
+}
+
+export function useDeleteRecord() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<null>(`/records/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: keys.records });
+      void client.invalidateQueries({ queryKey: keys.collection });
+    },
+  });
+}
+
+export type RecordPatch = Partial<Pick<ApiRecord, "media_condition" | "sleeve_condition" | "purchase_price_minor" | "purchase_currency" | "purchased_on" | "notes">>;
 
 /**
  * Change a record. The list updates at once and is put back if the server says no; the

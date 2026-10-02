@@ -1,11 +1,12 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { staleRecords } from "../src/db";
-import { suggestedValue } from "../src/valuation";
-import { api, resetDatabase, seedRecord } from "./helpers";
+import { priceByGrade, suggestedValue } from "../src/valuation";
+import { api, expectAllMocksUsed, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
 
 beforeEach(resetDatabase);
+afterEach(expectAllMocksUsed);
 
 const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY).toISOString();
@@ -149,5 +150,70 @@ describe("reading a suggestion from a stored payload", () => {
     expect(suggestedValue("not json", "NM", "GBP")).toBeNull();
     expect(suggestedValue(JSON.stringify({ suggestions: { "Mint (M)": gbp(40) } }), "M", "GBP")).toBe(4000);
     expect(suggestedValue(JSON.stringify({ suggestions: { "Mint (M)": gbp(40) } }), "M", "EUR")).toBeNull();
+  });
+});
+
+describe("a record's page", () => {
+  const suggestions = { "Very Good Plus (VG+)": gbp(25), "Near Mint (NM or M-)": gbp(32.5), "Good (G)": { currency: "USD", value: 9 } };
+
+  it("has the price history without raw payloads, the price at every grade, and a Discogs link", async () => {
+    const record = await seedRecord({ artist: "Nirvana", title: "Nevermind", discogs_release_id: 249504 });
+    await priced(record.id, 2400, daysAgo(3), { suggestions });
+    await priced(record.id, 2500, daysAgo(1), { suggestions });
+
+    const res = await api(`/records/${record.id}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      valuations: Record<string, unknown>[];
+      latest_method: string;
+      price_by_grade: { grade: string; value_minor: number | null }[];
+      discogs_url: string;
+    };
+    expect(body.valuations.map((v) => v.value_minor)).toEqual([2500, 2400]);
+    expect(body.valuations[0]).not.toHaveProperty("raw");
+    expect(body.latest_method).toBe("price_suggestion");
+    expect(body.discogs_url).toBe("https://www.discogs.com/release/249504");
+    expect(body.price_by_grade).toEqual([
+      { grade: "M", value_minor: null },
+      { grade: "NM", value_minor: 3250 },
+      { grade: "VG+", value_minor: 2500 },
+      { grade: "VG", value_minor: null },
+      { grade: "G+", value_minor: null },
+      { grade: "G", value_minor: null },
+      { grade: "F", value_minor: null },
+      { grade: "P", value_minor: null },
+    ]);
+  });
+
+  it("has no price ladder when Discogs gave no suggestions, or the record was never priced", async () => {
+    const listing = await seedRecord({ artist: "A", title: "Priced from listings", discogs_release_id: 7 });
+    await priced(listing.id, 1850, daysAgo(1), { suggestions: null });
+    const never = await seedRecord({ artist: "B", title: "Never priced" });
+
+    expect(await (await api(`/records/${listing.id}`)).json()).toMatchObject({ price_by_grade: null, latest_method: "price_suggestion" });
+    expect(await (await api(`/records/${never.id}`)).json()).toMatchObject({ price_by_grade: null, latest_method: null, discogs_url: null, valuations: [] });
+    expect(priceByGrade(null, "GBP")).toBeNull();
+  });
+
+  it("limits the history on request", async () => {
+    const record = await seedRecord({ artist: "A", title: "B" });
+    for (const d of [5, 4, 3, 2, 1]) await priced(record.id, 1000 + d, daysAgo(d));
+    const body = (await (await api(`/records/${record.id}?limit=2`)).json()) as { valuations: unknown[] };
+    expect(body.valuations).toHaveLength(2);
+    expect((await api(`/records/${record.id}?limit=0`)).status).toBe(400);
+  });
+
+  it("knows which grade each price was for", async () => {
+    const record = await seedRecord({ artist: "Nirvana", title: "Nevermind", discogs_release_id: 249504, media_condition: "VG" });
+    mockStats(249504, { lowest_price: gbp(18.5), num_for_sale: 42, blocked_from_sale: false });
+    mockSuggestions(249504, { "Very Good (VG)": gbp(20), "Near Mint (NM or M-)": gbp(32.5) });
+    await api(`/records/${record.id}/revalue`, { method: "POST" });
+    await api(`/records/${record.id}`, { method: "PATCH", json: { media_condition: "NM" } });
+
+    const body = (await (await api(`/records/${record.id}`)).json()) as { valuations: { source: string; media_condition: string; value_minor: number }[] };
+    expect(body.valuations.map((v) => [v.source, v.media_condition, v.value_minor])).toEqual([
+      ["regrade", "NM", 3250],
+      ["discogs", "VG", 2000],
+    ]);
   });
 });

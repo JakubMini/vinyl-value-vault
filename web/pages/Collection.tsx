@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { GRADES, type Grade } from "../../src/grades";
@@ -204,7 +204,9 @@ function RecordRow({ record: r }: { record: ListedRecord }) {
       </td>
       <td className="record-cell">
         <div className="record-title">
-          {r.title}
+          <Link to={`/records/${r.id}`} className="record-link">
+            {r.title}
+          </Link>
           {r.discogs_removed_at ? <span className="badge badge-neutral">Gone from Discogs</span> : null}
         </div>
         <div className="record-sub" title={[r.artist, r.format].filter(Boolean).join(" · ")}>
