@@ -14,9 +14,12 @@
   // and are set with `wrangler secret put` in production. See README.
   "vars": {
     "VALUATION_CURRENCY": "GBP",
-    // Each record costs up to two Discogs calls. The free plan allows 50 external
-    // fetches per invocation, so 20 records per run keeps a comfortable margin.
-    "VALUATION_BATCH_SIZE": "20",
+    // Records per run. Each costs up to two Discogs calls. Discogs allows 60 a
+    // minute per IP and Workers share IPs, so small batches every minute beat
+    // big ones every five: in practice the window is often partly used already.
+    "VALUATION_BATCH_SIZE": "5",
+    // A record priced within this many hours is not priced again.
+    "VALUATION_REFRESH_HOURS": "24",
     "DISCOGS_USER_AGENT": "VinylValueVault/0.1 +https://github.com/JakubMini/vinyl-value-vault"
   },
 
@@ -31,9 +34,9 @@
     }
   ],
 
-  // The valuation job. Every five minutes it refreshes the records that have
-  // gone longest without a price.
+  // The valuation job. Every minute it prices up to VALUATION_BATCH_SIZE records
+  // that are due, longest-waiting first.
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": ["* * * * *"]
   }
 }

@@ -9,7 +9,7 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 ## What it does
 
 - **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs. A whole Discogs collection can be imported in one command, and re-running it only adds what is new.
-- **Keeps the prices fresh.** Every five minutes a scheduled job takes the records that have gone longest without a price and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
+- **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Exposes a small JSON API** so a dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -17,7 +17,7 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 
 ```mermaid
 flowchart LR
-  cron([Cron Trigger<br/>every 5 minutes]) --> job
+  cron([Cron Trigger<br/>every minute]) --> job
   subgraph worker["One Cloudflare Worker"]
     job["Valuation job<br/>(scheduled handler)"]
     api["HTTP API<br/>(fetch handler)"]
@@ -42,7 +42,18 @@ Which of the two produced a value is stored with every valuation, so the figures
 
 ### Designed for the free tier
 
-The Workers free plan allows 50 outbound requests and 10 ms of CPU per invocation. Discogs allows 60 requests a minute. Rather than one big nightly run that would break both limits, the job runs every five minutes on the 20 records that have waited longest, two Discogs calls each. That is about 5,700 refreshes a day, so a collection of a thousand records is fully repriced daily with room to spare. The job reads Discogs' rate-limit headers and stops early instead of being throttled; whatever it did not reach waits for the next run. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
+The Workers free plan allows 50 outbound requests and 10 ms of CPU per invocation. Discogs allows 60 requests a minute, counted per source IP.
+
+That second limit turned out to be the real constraint. The first version ran every five minutes and asked for 20 records, about 40 calls at once. In production Discogs cut it off after about a dozen. Workers send requests from IP addresses shared with other Cloudflare customers, so part of each minute's allowance is often already spent by someone else.
+
+The job now works with that rather than against it:
+
+- **Small and frequent.** It runs every minute and prices at most 5 records, so at most 10 calls. Load is spread across the minute instead of bursting.
+- **Only what is due.** A record priced in the last 24 hours is skipped. Once the collection is fresh the job makes no Discogs calls at all, and each record costs two calls a day.
+- **No wasted calls.** If Discogs says the account cannot get price suggestions, the job stops asking for the rest of the batch and uses listing prices.
+- **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits a minute.
+
+At best that is 7,200 record prices a day, far more than the daily refresh of a personal collection needs. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
 
 Expected running cost at this scale: nothing.
 
@@ -150,7 +161,7 @@ npm run import:discogs                  # import into the live vault
 
 The script reads `DISCOGS_TOKEN` and `API_KEY` from `.dev.vars`. It finds the Discogs account behind the token, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
 
-Records are created with `?value=false`. Pricing a few hundred records at once would mean a burst of Discogs calls from the Worker; instead the cron prices them 20 at a time over the next hour or so. Each record stores the Discogs collection item it came from, so the import can be re-run whenever the collection grows.
+Records are created with `?value=false`. Pricing a few hundred records at once would mean a burst of Discogs calls from the Worker; instead the cron prices them a few at a time, every minute, until all are done. Each record stores the Discogs collection item it came from, so the import can be re-run whenever the collection grows.
 
 ## Deploying
 

@@ -109,14 +109,13 @@ describe("the scheduled valuation job", () => {
     expect(first).toMatchObject({ considered: 1, valued: 1, unpriced: 0, errors: 0, stoppedEarly: false });
     expect(first.snapshot).toMatchObject({ currency: "GBP", total_minor: 2200, record_count: 3, valued_count: 1, taken_at: "2026-10-02T06:00:00.000Z" });
 
-    // The real scheduled handler, with the default batch size: it reprices both, oldest first.
+    // The real scheduled handler: Nevermind was last priced over a day ago so it is due;
+    // Dummy was priced this morning so it is left alone.
     mockStats(NEVERMIND, { lowest_price: gbp(18.5), num_for_sale: 42, blocked_from_sale: false });
     mockSuggestions(NEVERMIND, { "Very Good Plus (VG+)": gbp(25) });
-    mockStats(DUMMY, { lowest_price: gbp(18.5), num_for_sale: 3, blocked_from_sale: false });
-    mockSuggestions(DUMMY, { "Very Good Plus (VG+)": gbp(22) });
 
     const ctx = createExecutionContext();
-    await worker.scheduled(createScheduledController({ cron: "*/5 * * * *" }), env, ctx);
+    await worker.scheduled(createScheduledController({ cron: "* * * * *" }), env, ctx);
     await waitOnExecutionContext(ctx);
 
     const collection = (await (await api("/collection")).json()) as { total_minor: number; valued_count: number; unpriced_count: number; history: { total_minor: number }[] };
@@ -132,8 +131,39 @@ describe("the scheduled valuation job", () => {
     const valuations = await env.DB.prepare("SELECT record_id, COUNT(*) AS n FROM valuations GROUP BY record_id ORDER BY record_id").all();
     expect(valuations.results).toEqual([
       { record_id: fresh.id, n: 1 },
-      { record_id: never.id, n: 2 },
+      { record_id: never.id, n: 1 },
     ]);
+  });
+
+  it("leaves records priced within the refresh window alone", async () => {
+    const now = new Date("2026-10-02T12:00:00.000Z");
+    await seedRecord({ artist: "A", title: "Priced an hour ago", discogs_release_id: 1001, last_valued_at: "2026-10-02T11:00:00.000Z" });
+    await seedRecord({ artist: "B", title: "Priced yesterday morning", discogs_release_id: 1002, last_valued_at: "2026-10-01T09:00:00.000Z" });
+    await seedRecord({ artist: "C", title: "Never priced", discogs_release_id: 1003 });
+    for (const id of [1002, 1003]) {
+      mockStats(id, { lowest_price: gbp(10), num_for_sale: 1, blocked_from_sale: false });
+      mockSuggestions(id, {});
+    }
+
+    const summary = await runValuationBatch(env, { now });
+    expect(summary).toMatchObject({ considered: 2, valued: 2, errors: 0 });
+
+    // Run again straight away: nothing is due, so no Discogs calls at all.
+    expect(await runValuationBatch(env, { now })).toMatchObject({ considered: 0, valued: 0 });
+  });
+
+  it("stops asking for price suggestions once Discogs says the account cannot have them", async () => {
+    for (const id of [1001, 1002, 1003]) {
+      await seedRecord({ artist: "A", title: `Release ${id}`, discogs_release_id: id });
+      mockStats(id, { lowest_price: gbp(10), num_for_sale: 1, blocked_from_sale: false });
+    }
+    // Only the first record gets a suggestions call. Any further one would be unmocked and fail.
+    mockSuggestions(1001, { message: "You must fill out your seller settings first." }, 404);
+
+    const summary = await runValuationBatch(env);
+    expect(summary).toMatchObject({ considered: 3, valued: 3, errors: 0, stoppedEarly: false });
+    const methods = await env.DB.prepare("SELECT DISTINCT method FROM valuations").all();
+    expect(methods.results).toEqual([{ method: "lowest_listing" }]);
   });
 
   it("stops the run when Discogs starts rate limiting, leaving the rest for next time", async () => {

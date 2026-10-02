@@ -53,7 +53,8 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   `src/env.d.ts`; secret values are never in the repo (`.dev.vars` locally, `wrangler secret put` in
   production).
 - Respect the Workers free-plan budget: at most 50 outbound fetches and 10 ms CPU per invocation.
-  A valuation batch is 20 records (two Discogs calls each). Change `VALUATION_BATCH_SIZE` only with
+  The cron runs every minute on a batch of 5 records (two Discogs calls each), skipping records priced
+  within `VALUATION_REFRESH_HOURS`. Change `VALUATION_BATCH_SIZE` only with
   a reason written down.
 - Discogs is rate limited to 60 requests a minute. Always send the User-Agent, always read the
   rate-limit headers, stop early rather than get throttled.

@@ -8,10 +8,12 @@
  * currently listed is used instead, and the method is recorded so the two are
  * never confused.
  *
- * Why batches: the Workers free plan allows 50 external fetches per
- * invocation and Discogs allows 60 requests a minute. Twenty records at two
- * calls each fits both, and a run every five minutes gives ~5,700 refreshes a
- * day, far more than a personal collection needs.
+ * Why small, frequent batches: Discogs allows 60 requests a minute per source
+ * IP, and Workers share outgoing IPs with other Cloudflare customers, so part of
+ * that allowance is often used by someone else. Five records a minute (at most
+ * ten calls) spreads the load instead of bursting; the job reads the rate-limit
+ * headers and stops early when the window is nearly spent. Records priced within
+ * VALUATION_REFRESH_HOURS are skipped, so a fresh collection costs no calls.
  */
 import {
   type RecordRow,
@@ -28,6 +30,12 @@ import { toMinor } from "./money";
 export type ValuationOutcome =
   | { status: "valued"; recordId: number; valueMinor: number; method: "price_suggestion" | "lowest_listing" }
   | { status: "unpriced"; recordId: number; reason: string };
+
+/** Options for one valuation. `suggestions` is shared across a batch. */
+export interface ValueOptions {
+  /** Set to false once Discogs has said suggestions are unavailable for this account, to save a call per record. */
+  suggestions?: { available: boolean };
+}
 
 export interface BatchSummary {
   considered: number;
@@ -53,6 +61,7 @@ export async function valueRecord(
   record: RecordRow,
   currency: string,
   now: string,
+  options: ValueOptions = {},
 ): Promise<ValuationOutcome> {
   if (record.discogs_release_id === null) {
     const reason = "No Discogs release id";
@@ -68,7 +77,11 @@ export async function valueRecord(
     return { status: "unpriced", recordId: record.id, reason };
   }
 
-  const suggestions = await discogs.getPriceSuggestions(releaseId);
+  // The release exists (stats answered), so a null here means the account cannot get
+  // suggestions at all: no token, or seller settings missing. Stop asking for this batch.
+  const share = options.suggestions ?? { available: true };
+  const suggestions = share.available ? await discogs.getPriceSuggestions(releaseId) : null;
+  if (suggestions === null) share.available = false;
   const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[record.media_condition]];
   const lowest = stats.lowest_price && stats.lowest_price.currency === currency ? toMinor(stats.lowest_price.value) : null;
 
@@ -102,11 +115,15 @@ export async function valueRecord(
 /** One scheduled run: refresh the stalest records, then snapshot the collection total if anything changed. */
 export async function runValuationBatch(env: Env, options: { limit?: number; now?: Date } = {}): Promise<BatchSummary> {
   const currency = env.VALUATION_CURRENCY;
-  const limit = options.limit ?? Math.max(1, Number(env.VALUATION_BATCH_SIZE) || 20);
-  const now = (options.now ?? new Date()).toISOString();
+  const limit = options.limit ?? Math.max(1, Number(env.VALUATION_BATCH_SIZE) || 5);
+  const nowDate = options.now ?? new Date();
+  const now = nowDate.toISOString();
+  const refreshHours = Math.max(0, Number(env.VALUATION_REFRESH_HOURS) || 24);
+  const dueBefore = new Date(nowDate.getTime() - refreshHours * 3_600_000).toISOString();
   const discogs = discogsFromEnv(env);
+  const suggestions = { available: true };
 
-  const records = await staleRecords(env.DB, limit);
+  const records = await staleRecords(env.DB, limit, dueBefore);
   const summary: BatchSummary = { considered: records.length, valued: 0, unpriced: 0, errors: 0, stoppedEarly: false };
 
   for (const record of records) {
@@ -118,7 +135,7 @@ export async function runValuationBatch(env: Env, options: { limit?: number; now
     }
 
     try {
-      const outcome = await valueRecord(env.DB, discogs, record, currency, now);
+      const outcome = await valueRecord(env.DB, discogs, record, currency, now, { suggestions });
       if (outcome.status === "valued") summary.valued += 1;
       else summary.unpriced += 1;
     } catch (error) {
