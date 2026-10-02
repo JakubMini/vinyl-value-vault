@@ -1,0 +1,27 @@
+import { fileURLToPath } from "node:url";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
+import { defineConfig } from "vitest/config";
+
+// Tests run inside the Workers runtime (workerd) against a real local D1, with
+// the migrations in ./migrations applied by test/apply-migrations.ts.
+export default defineConfig({
+  plugins: [
+    cloudflareTest(async () => {
+      const migrations = await readD1Migrations(fileURLToPath(new URL("./migrations", import.meta.url)));
+      return {
+        wrangler: { configPath: "./wrangler.jsonc" },
+        miniflare: {
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            API_KEY: "test-api-key",
+            DISCOGS_TOKEN: "test-discogs-token",
+          },
+        },
+      };
+    }),
+  ],
+  test: {
+    include: ["test/**/*.test.ts"],
+    setupFiles: ["./test/apply-migrations.ts", "./test/setup-network.ts"],
+  },
+});
