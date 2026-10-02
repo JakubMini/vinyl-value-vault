@@ -1,0 +1,19 @@
+{
+  // The dashboard runs in a browser, so it type-checks against the DOM, not the Workers runtime.
+  // It shares only Worker-free modules from src/: response types, grades and money formatting.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client"]
+  },
+  "include": ["web", "src/api-types.ts", "src/grades.ts", "src/money.ts"]
+}

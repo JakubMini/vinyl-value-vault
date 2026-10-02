@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/JakubMini/vinyl-value-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/JakubMini/vinyl-value-vault/actions/workflows/ci.yml)
 
-A small serverless backend that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, designed to run for free.
+A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)). Next up is the dashboard: see the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)). The dashboard is being built in small steps: see the [roadmap](#roadmap).
 
 ## What it does
 
@@ -12,25 +12,29 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Exposes a small JSON API** so a dashboard, a script, or a voice assistant can add records and ask about them.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth and runs or previews a sync with Discogs; the collection table, grading and price history come next.
+- **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
 ## How it works
 
 ```mermaid
 flowchart LR
+  browser(["Browser, signed in<br/>with Cloudflare Access"]) --> assets & api
   cron([Cron Trigger<br/>every minute]) --> job
   subgraph worker["One Cloudflare Worker"]
+    assets["Dashboard<br/>(static assets)"]
+    api["HTTP API, /api<br/>(fetch handler)"]
     job["Scheduled handler<br/>valuation job, and once<br/>a day the collection sync"]
-    api["HTTP API<br/>(fetch handler)"]
   end
   job -->|"prices, and the<br/>collection itself"| discogs[("Discogs API")]
   job <--> d1[("D1 database<br/>SQLite")]
   api <--> d1
-  dash["Dashboard (later)"] -.-> api
   alexa["Alexa skill (later)"] -.-> api
 ```
 
 One Worker, two entry points. The `fetch` handler serves the API; the `scheduled` handler runs the valuation job, and once a day the collection sync in its place. Both reach the same D1 database through a binding, so there is no connection string, no server to keep alive, and nothing running between requests.
+
+The dashboard is a React app that Vite builds into static files, deployed with the Worker. Cloudflare serves those files without running the Worker at all, so page loads are free and unmetered; only `/api/*` reaches the code. Any other path gets the app's `index.html`, so a link to a page inside the dashboard still works after a reload. One origin for the app and the API means no CORS.
 
 ### How a record gets its price
 
@@ -77,6 +81,7 @@ Expected running cost at this scale: nothing.
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Serverless, globally deployed, generous free tier, and the cron, database and HTTP surface come from one platform. |
 | Database | [D1](https://developers.cloudflare.com/d1/) | A hosted SQLite database with migrations and a binding straight into the Worker. Right-sized for a personal collection. |
 | Scheduling | [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) | A line of config, no scheduler to run. |
+| Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/), on [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) | One deploy and one origin with the API. Cloudflare's Vite plugin runs the Worker in the real runtime during development, next to the app. [TanStack Query](https://tanstack.com/query) handles fetching and caching; styling is plain CSS with light and dark tokens. |
 | HTTP | [Hono](https://hono.dev/) | A small, fast, well-typed router built for the Workers runtime. |
 | Sign-in | [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) | A login page for the dashboard without writing one, free for a personal project. The Worker verifies Access's signed token itself, so a misconfiguration locks the door rather than opening it. |
 | Validation | [Zod](https://zod.dev/) | Every request body and query string is checked before it touches the database. |
@@ -170,14 +175,15 @@ You need Node 24 or newer. Nothing else is installed on your machine; the Worker
 ```bash
 npm install
 cp .dev.vars.example .dev.vars      # then set API_KEY, and DISCOGS_TOKEN if you have one
+echo "VITE_DEV_API_KEY=<the same API_KEY>" > .env.development.local
 npm run db:migrate:local
 npm run dev
 ```
 
-The API is at `http://localhost:8787/api`. The dev server runs with `--test-scheduled`, so the cron handler can be fired by hand:
+The dashboard is at `http://localhost:5173` and the API at `http://localhost:5173/api`. There is no Cloudflare Access locally, so in development the dashboard sends the API key from `.env.development.local`; Vite reads that file only in development, so the key never reaches a production build. The cron handler can be fired by hand:
 
 ```bash
-curl http://localhost:8787/__scheduled
+curl http://localhost:5173/cdn-cgi/local/scheduled
 ```
 
 Checks before pushing:
@@ -213,7 +219,7 @@ npx wrangler secret put API_KEY
 npx wrangler secret put DISCOGS_TOKEN
 ```
 
-After that, `npm run deploy` ships a new version. `npx wrangler tail` streams the structured logs, including a summary line from every valuation run.
+After that, `npm run deploy` builds the dashboard and the Worker with Vite and ships both. `npx wrangler tail` streams the structured logs, including a summary line from every valuation run and sync.
 
 ## How I work on this
 
@@ -227,6 +233,9 @@ After that, `npm run deploy` ships a new version. `npx wrangler tail` streams th
 ## Project layout
 
 ```
+index.html       the dashboard's page; Vite builds it with web/ into static assets
+web/             the dashboard: React pages, the API client, styles
+public/          files served as they are: icon, security headers
 src/
   index.ts       Worker entry: fetch -> the API, scheduled -> the valuation job or the daily sync
   app.ts         HTTP routes, validation, authentication
@@ -238,9 +247,11 @@ src/
   db.ts          every SQL statement, typed
   grades.ts      Goldmine grades and their Discogs labels
   money.ts       minor-unit helpers
+  api-types.ts   response shapes shared by the API and the dashboard
 migrations/      D1 schema, numbered and append-only
 test/            Vitest suites running inside workerd
-wrangler.jsonc   Worker config: bindings, vars, cron
+wrangler.jsonc   Worker config: bindings, vars, cron, static assets
+vite.config.ts   one build for the dashboard and the Worker
 ```
 
 ## Roadmap
@@ -248,7 +259,10 @@ wrangler.jsonc   Worker config: bindings, vars, cron
 - [x] Schema, API, valuation job, tests and CI
 - [x] First deployment
 - [x] Import my actual collection, and keep it in sync with Discogs
-- [ ] Dashboard: add records, see the total and its trend
+- [x] Dashboard, first step: the total, and syncing with Discogs
+- [ ] Dashboard: the collection table, sorting and grading
+- [ ] Dashboard: each record's price history, and the collection's
+- [ ] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"
 - [ ] Gain and loss against purchase price, per record and overall
 

@@ -1,0 +1,8 @@
+# Security headers for the dashboard's static assets (Workers Static Assets reads this file).
+# Scripts and styles come only from this site; images from Discogs' image host; frames only
+# from Spotify's embedded player; API calls only to this site.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://i.discogs.com; frame-src https://open.spotify.com; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

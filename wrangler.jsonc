@@ -5,6 +5,16 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  // The dashboard: a single-page app built by Vite into static assets. Asset requests are
+  // served without running the Worker (free and unmetered); /api/* always reaches the Worker,
+  // and any other unknown path gets index.html so client-side routes survive a reload.
+  // The directory is set by @cloudflare/vite-plugin at build time, so plain `wrangler dev`
+  // and `wrangler deploy` need `npm run build` first (npm run deploy does it).
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
