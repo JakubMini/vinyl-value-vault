@@ -78,6 +78,7 @@ Expected running cost at this scale: nothing.
 | Database | [D1](https://developers.cloudflare.com/d1/) | A hosted SQLite database with migrations and a binding straight into the Worker. Right-sized for a personal collection. |
 | Scheduling | [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) | A line of config, no scheduler to run. |
 | HTTP | [Hono](https://hono.dev/) | A small, fast, well-typed router built for the Workers runtime. |
+| Sign-in | [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) | A login page for the dashboard without writing one, free for a personal project. The Worker verifies Access's signed token itself, so a misconfiguration locks the door rather than opening it. |
 | Validation | [Zod](https://zod.dev/) | Every request body and query string is checked before it touches the database. |
 | Language | TypeScript, strict | Binding types are generated from the Wrangler config, so a typo in a binding name fails the build, not production. |
 | Tests | [Vitest](https://vitest.dev/) with Cloudflare's plugin | Tests run inside the real Workers runtime against a real local D1 with migrations applied. Discogs is mocked at the network layer with [Mock Service Worker](https://mswjs.io/). |
@@ -99,7 +100,7 @@ The schema is in [`migrations/`](migrations/), one numbered file per change.
 
 ## API
 
-Every route lives under `/api`, which leaves the rest of the hostname free for the dashboard. Every route except `/api/health` requires `Authorization: Bearer <API_KEY>`. Responses are JSON. Amounts are in minor units, with a formatted string alongside where it helps.
+Every route lives under `/api`, which leaves the rest of the hostname free for the dashboard. Every route except `/api/health` needs a credential: the API key as `Authorization: Bearer <API_KEY>`, or a Cloudflare Access login (see [Who can get in](#who-can-get-in)). Responses are JSON. Amounts are in minor units, with a formatted string alongside where it helps.
 
 | Method and path | What it does |
 | --- | --- |
@@ -145,6 +146,22 @@ curl -s -X POST http://localhost:8787/api/records \
   "last_valuation_error": null
 }
 ```
+
+## Who can get in
+
+Two kinds of caller, two credentials. Everything except `/api/health` needs one of them.
+
+- **Me, in a browser.** The dashboard sits behind Cloudflare Access. Before a request reaches the Worker, Access asks me to log in, then attaches a signed token to every request. The Worker checks that token itself: the signature against the team's published keys, the issuer, the application it was issued for, and its expiry. A header on its own proves nothing.
+- **Scripts and tests.** `Authorization: Bearer <API_KEY>`, compared in constant time. A script calling through Access also sends an Access service token (`CF-Access-Client-Id` and `CF-Access-Client-Secret`).
+
+Setting Access up, once:
+
+1. In the Cloudflare dashboard (the personal account): Workers & Pages → vinyl-value-vault → Settings → Domains & Routes → enable Cloudflare Access, for workers.dev and for Preview URLs. The Zero Trust free plan covers up to 50 users, though signing up asks for a payment method.
+2. In Zero Trust → Access → Applications, open the application it created. Limit its policy to my email and copy its Application Audience (AUD) tag.
+3. Set `ACCESS_TEAM_DOMAIN` (`https://<team>.cloudflareaccess.com`) and `ACCESS_AUD` in `wrangler.jsonc`, and deploy. While either is empty, the Worker refuses every Access token and only the API key works.
+4. For scripts, create a service token under Zero Trust → Access → Service Auth and allow it in the application's policies.
+
+With Access on, `/api/health` is behind the login too.
 
 ## Running it locally
 
@@ -213,6 +230,7 @@ After that, `npm run deploy` ships a new version. `npx wrangler tail` streams th
 src/
   index.ts       Worker entry: fetch -> the API, scheduled -> the valuation job or the daily sync
   app.ts         HTTP routes, validation, authentication
+  access.ts      checking Cloudflare Access sign-in tokens
   valuation.ts   the job: pick stale records, price them, snapshot the total
   sync.ts        the Discogs collection sync: add, refresh, flag what has gone
   discogs.ts     Discogs API client

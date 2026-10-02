@@ -1,14 +1,16 @@
 /**
  * The HTTP API, served under /api so the rest of the hostname is free for the dashboard.
- * Everything except /api/health needs `Authorization: Bearer <API_KEY>`.
+ * Everything except /api/health needs either `Authorization: Bearer <API_KEY>` (scripts, tests,
+ * local development) or a Cloudflare Access login (the dashboard in a browser).
  * Amounts are integers in minor units; a formatted string is included for convenience.
  */
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { timingSafeEqual } from "hono/utils/buffer";
 import { validator } from "hono/validator";
 import { z } from "zod";
 
+import { AccessUnavailable, verifyAccessJwt } from "./access";
 import {
   type RecordInput,
   type RecordRow,
@@ -110,18 +112,35 @@ export const app = new Hono<{ Bindings: Env }>().basePath("/api");
 
 app.get("/health", (c) => c.json({ ok: true, service: "vinyl-value-vault", now: new Date().toISOString() }));
 
-// Everything below requires the API key. Fail closed if the secret was never set.
-// The comparison hashes both sides and compares in constant time.
-app.use("*", async (c, next) => {
-  const expected = c.env.API_KEY;
-  if (!expected) return c.json({ error: "Server is missing the API_KEY secret" }, 500);
+function unauthorized(c: Context) {
+  c.header("WWW-Authenticate", 'Bearer realm="vinyl-value-vault"');
+  return c.json({ error: "Unauthorized" }, 401);
+}
 
+// Everything below needs a credential. A Bearer key is judged on its own: right or wrong, an
+// Access token alongside it changes nothing. Without one, a Cloudflare Access token is checked.
+// Each path fails closed when its configuration is missing.
+app.use("*", async (c, next) => {
   const presented = /^Bearer\s+(\S+)$/i.exec(c.req.header("Authorization") ?? "")?.[1];
-  if (!presented || !(await timingSafeEqual(expected, presented))) {
-    c.header("WWW-Authenticate", 'Bearer realm="vinyl-value-vault"');
-    return c.json({ error: "Unauthorized" }, 401);
+  if (presented !== undefined) {
+    // timingSafeEqual hashes both sides and compares in constant time.
+    const expected = c.env.API_KEY;
+    return expected && (await timingSafeEqual(expected, presented)) ? next() : unauthorized(c);
   }
-  await next();
+
+  const assertion = c.req.header("Cf-Access-Jwt-Assertion");
+  const teamDomain = c.env.ACCESS_TEAM_DOMAIN;
+  const aud = c.env.ACCESS_AUD;
+  if (assertion && teamDomain && aud) {
+    try {
+      if (await verifyAccessJwt(assertion, { teamDomain, aud })) return next();
+    } catch (error) {
+      if (!(error instanceof AccessUnavailable)) throw error;
+      console.error(JSON.stringify({ event: "access.keys_unavailable", error: error.message }));
+      return c.json({ error: "Cannot check the sign-in right now" }, 503);
+    }
+  }
+  return unauthorized(c);
 });
 
 app.get("/collection", async (c) => {
