@@ -20,12 +20,13 @@
     "DISCOGS_USER_AGENT": "VinylValueVault/0.1 +https://github.com/JakubMini/vinyl-value-vault"
   },
 
-  // database_id is deliberately omitted: wrangler creates the database on the
-  // first `wrangler deploy` and writes the id back here.
+  // Created by the first `wrangler deploy` on 2 Oct 2026 (automatic provisioning).
+  // The id is pinned so every command resolves the same database.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "vinyl-value-vault",
+      "database_id": "53c97c0d-5111-4503-bd84-84755daf3c2d",
       "migrations_dir": "migrations"
     }
   ],
