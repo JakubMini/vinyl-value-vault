@@ -53,8 +53,10 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   `public/`), sharing response types through `src/api-types.ts`, which must stay free of Worker
   types; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
 - Discogs owns what a pressing is (artist, title, label, year, format, artwork); the vault owns
-  what is said about the copy (grades, notes, purchase details). A sync only ever writes the
-  former to existing records. Keep it that way.
+  what is said about the copy (grades, notes, purchase details, the Spotify album it is pinned
+  to). A sync only ever writes the former to existing records. Keep it that way.
+- Spotify is linked without its API: `src/spotify.ts` reads an album id from a pasted link and
+  builds Spotify URLs. It is runtime-free, shared by the Worker and the dashboard.
 - Migrations in `migrations/` are append-only. Add a new numbered file; never edit one that may
   already have been applied anywhere.
 - Config lives in `wrangler.jsonc`. After changing bindings or vars run `npm run types`. The generated

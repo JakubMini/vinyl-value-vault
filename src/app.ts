@@ -33,10 +33,19 @@ import { DiscogsError } from "./discogs";
 import { GRADES } from "./grades";
 import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
+import { spotifyAlbumId } from "./spotify";
 import { syncCollection } from "./sync";
 import { discogsFromEnv, priceByGrade, regrade, runValuationBatch, valueRecord } from "./valuation";
 
 const grade = z.enum(GRADES);
+
+/** A Spotify album as a link, a URI or a bare id. Stored as the id. */
+const spotifyAlbum = z.string().transform((value, ctx) => {
+  const id = spotifyAlbumId(value);
+  if (id) return id;
+  ctx.addIssue({ code: "custom", message: "Use a Spotify album link, such as https://open.spotify.com/album/…" });
+  return z.NEVER;
+});
 
 const recordFields = z.object({
   discogs_release_id: z.number().int().positive().nullable(),
@@ -54,6 +63,7 @@ const recordFields = z.object({
   purchase_currency: z.string().trim().length(3).toUpperCase().nullable(),
   purchased_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").nullable(),
   notes: z.string().nullable(),
+  spotify_album_id: spotifyAlbum.nullable(),
 });
 
 const createRecordSchema = recordFields

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { GRADES, type Grade } from "../../src/grades";
+import { spotifyAlbumUrl } from "../../src/spotify";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { count, formatMinor } from "../format";
 import { useRecords, useUpdateRecord } from "../queries";
@@ -207,6 +208,11 @@ function RecordRow({ record: r }: { record: ListedRecord }) {
           <Link to={`/records/${r.id}`} className="record-link">
             {r.title}
           </Link>
+          {r.spotify_album_id ? (
+            <a className="play-link" href={spotifyAlbumUrl(r.spotify_album_id)} target="_blank" rel="noreferrer" aria-label={`Play ${r.title} on Spotify`}>
+              <span aria-hidden="true">▶</span> Spotify
+            </a>
+          ) : null}
           {r.discogs_removed_at ? <span className="badge badge-neutral">Gone from Discogs</span> : null}
         </div>
         <div className="record-sub" title={[r.artist, r.format].filter(Boolean).join(" · ")}>

@@ -4,7 +4,7 @@
 
 A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)). The dashboard is being built in small steps: see the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)), and for now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built and deployed; it opens to me once Cloudflare Access is switched on (see [Who can get in](#who-can-get-in)).
 
 ## What it does
 
@@ -13,6 +13,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
+- **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
 ## How it works
@@ -99,7 +100,7 @@ Six tables. Money is stored as integers in minor units (pence) so there is no fl
 
 | Table | One row per | Notes |
 | --- | --- | --- |
-| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs and a flag for records that have left the Discogs collection. |
+| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs, a flag for records that have left the Discogs collection, and the Spotify album a record is pinned to. |
 | `valuations` | price fetched for a record | Append-only history, with the method used, the grade the price was for, and the raw Discogs payload for re-deriving later (a regrade does exactly that). |
 | `collection_snapshots` | valuation run that changed something | The collection total after every run, roughly one a minute while prices are being refreshed. |
 | `collection_daily` | day | The last total of each day, kept current by the job. What the chart reads. |
@@ -119,7 +120,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, and a link to the release on Discogs. |
-| `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. |
+| `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. `spotify_album_id` takes an album link, a `spotify:album:` URI or a bare id, and stores the id. |
 | `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
 | `POST /api/valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
@@ -247,6 +248,7 @@ src/
   access.ts      checking Cloudflare Access sign-in tokens
   valuation.ts   the job: pick stale records, price them, snapshot the total
   sync.ts        the Discogs collection sync: add, refresh, flag what has gone
+  spotify.ts     reading a Spotify album from a pasted link; Spotify URLs (shared with the dashboard)
   discogs.ts     Discogs API client
   release.ts     Discogs release and collection item -> record mapping
   db.ts          every SQL statement, typed
@@ -268,7 +270,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Dashboard: the collection table, sorting and grading
 - [x] Dashboard: each record's page and price history
 - [x] Dashboard: the collection's value over time, and its biggest risers and fallers
-- [ ] Spotify links for every record
+- [x] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"
 - [x] Gain and loss against purchase price, per record and overall
 

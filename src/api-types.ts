@@ -33,6 +33,8 @@ export interface ApiRecord {
   discogs_added_at: string | null;
   /** Set when the record has left the Discogs collection. */
   discogs_removed_at: string | null;
+  /** The Spotify album it is pinned to, or null. */
+  spotify_album_id: string | null;
   created_at: string;
   updated_at: string;
 }
