@@ -115,9 +115,22 @@ function validate<U extends "json" | "query", S extends z.ZodType>(target: U, sc
   });
 }
 
+/** A JSON array of strings as stored, or an empty list for null, malformed or anything else. */
+function readList(text: string | null): string[] {
+  if (!text) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 function presentRecord(row: RecordRow): ApiRecord {
   return {
     ...row,
+    genres: readList(row.genres),
+    styles: readList(row.styles),
     current_value:
       row.current_value_minor !== null && row.current_currency !== null
         ? formatMinor(row.current_value_minor, row.current_currency)

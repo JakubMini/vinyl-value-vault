@@ -1,19 +1,13 @@
 import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
-import { breakdown, BREAKDOWNS, type BreakdownKey, concentration, growth, market, moves, valueBands } from "../../src/insights";
-import { DEFAULT_SELECTION, type Selection, writeSelection } from "../../src/select";
+import { breakdown, BREAKDOWNS, type BreakdownKey, concentration, growth, market, moves, OVERLAPPING, valueBands } from "../../src/insights";
 import { type Bar, BarChart } from "../BarChart";
 import { ErrorState, Loading, Tile } from "../components";
 import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
+import { collectionLink } from "../links";
 import { useCollection, useRecords } from "../queries";
-
-/** The collection page narrowed to a selection. */
-function collectionLink(partial: Partial<Selection>): string {
-  const query = new URLSearchParams(writeSelection({ ...DEFAULT_SELECTION, ...partial })).toString();
-  return query ? `/collection?${query}` : "/collection";
-}
 
 const percent = (share: number) => `${Math.round(share * 100)}%`;
 
@@ -154,7 +148,12 @@ function Breakdown({ rows, by, measure, currency }: { rows: ListedRecord[]; by: 
   return (
     <>
       <BarChart label={`${measure === "value" ? "Value" : "Records"} by ${by}`} format={(v) => (measure === "value" ? formatMinor(v, currency) : count(v))} bars={bars} />
-      {by === "label" || by === "artist" ? <p className="muted small">The twelve with the most value; the rest are folded into Others.</p> : null}
+      {slices.some((s) => s.key === "others") || OVERLAPPING.includes(by) ? (
+        <p className="muted small">
+          {slices.some((s) => s.key === "others") ? "The twelve with the most value; the rest are folded into Others. " : ""}
+          {OVERLAPPING.includes(by) ? `A record with two ${by}s counts in both, so the shares can add up to more than the whole.` : ""}
+        </p>
+      ) : null}
     </>
   );
 }

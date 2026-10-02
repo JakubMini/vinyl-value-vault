@@ -11,12 +11,19 @@ export interface Release {
   artists?: { name: string; anv?: string; join?: string }[];
   labels?: { name: string; catno?: string }[];
   formats?: { name: string; qty?: string; descriptions?: string[] }[];
+  /** Discogs' broad genres ("Rock", "Jazz") and finer styles ("Indie Rock", "Hard Bop"). */
+  genres?: string[];
+  styles?: string[];
   /** Image URLs, present in collection items. Empty, or a spacer image, when there is no artwork. */
   cover_image?: string;
   thumb?: string;
 }
 
-/** Turn a Discogs release into the fields a record needs, so adding by id is enough. */
+/**
+ * Turn a Discogs release into the fields a record needs, so adding by id is enough. Genres and
+ * styles are kept as JSON text, the form they take in the database, so a sync can compare them
+ * as plain strings and D1 can bind them.
+ */
 export function releaseToRecordFields(release: Release): {
   artist: string;
   title: string;
@@ -25,6 +32,8 @@ export function releaseToRecordFields(release: Release): {
   year?: number;
   country?: string;
   format?: string;
+  genres?: string;
+  styles?: string;
 } {
   const artist =
     (release.artists ?? [])
@@ -56,6 +65,8 @@ export function releaseToRecordFields(release: Release): {
     ...(release.year ? { year: release.year } : {}),
     ...(release.country ? { country: release.country } : {}),
     ...(formatText ? { format: formatText } : {}),
+    ...(release.genres?.length ? { genres: JSON.stringify(release.genres) } : {}),
+    ...(release.styles?.length ? { styles: JSON.stringify(release.styles) } : {}),
   };
 }
 
@@ -91,6 +102,9 @@ export interface ImportedRecord {
   year?: number;
   country?: string;
   format?: string;
+  /** JSON arrays of strings, as stored. */
+  genres?: string;
+  styles?: string;
   media_condition?: Grade;
   sleeve_condition?: Grade;
   notes?: string;

@@ -7,6 +7,7 @@ import { ApiError } from "../api";
 import { ErrorState, Loading, When } from "../components";
 import { count, dateTime, formatMinor } from "../format";
 import { LineChart } from "../LineChart";
+import { collectionLink } from "../links";
 import { Listen } from "../Listen";
 import { type RecordPatch, useDeleteRecord, useRecord, useRevalue, useUpdateRecord } from "../queries";
 
@@ -46,6 +47,20 @@ function Header({ record: r }: { record: RecordDetail }) {
         <h1>{r.title}</h1>
         <p className="record-artist">{r.artist}</p>
         {details ? <p className="muted">{details}</p> : null}
+        {r.genres.length + r.styles.length > 0 ? (
+          <div className="chips" aria-label="Genres and styles, each a link to more like it">
+            {r.genres.map((g) => (
+              <Link key={`genre:${g}`} className="chip" to={collectionLink({ genre: g })}>
+                {g}
+              </Link>
+            ))}
+            {r.styles.map((st) => (
+              <Link key={`style:${st}`} className="chip chip-quiet" to={collectionLink({ style: st })}>
+                {st}
+              </Link>
+            ))}
+          </div>
+        ) : null}
         <div className="actions">
           {r.discogs_url ? (
             <a className="button" href={r.discogs_url} target="_blank" rel="noreferrer">

@@ -13,6 +13,9 @@ export interface RecordRow {
   year: number | null;
   country: string | null;
   format: string | null;
+  /** Discogs' genres and styles as JSON arrays of strings, or null for a record Discogs has not described. */
+  genres: string | null;
+  styles: string | null;
   media_condition: Grade;
   sleeve_condition: Grade;
   purchase_price_minor: number | null;
@@ -100,14 +103,18 @@ export const EDITABLE_COLUMNS = [
   "spotify_album_id",
 ] as const;
 
+/** Columns filled in from a Discogs release and refreshed by a sync, never set by a client. */
+export const RELEASE_ONLY_COLUMNS = ["genres", "styles"] as const;
+
 export type EditableColumn = (typeof EDITABLE_COLUMNS)[number];
-export type RecordInput = Pick<RecordRow, "artist" | "title"> & Partial<Pick<RecordRow, EditableColumn>>;
+type ReleaseOnlyColumn = (typeof RELEASE_ONLY_COLUMNS)[number];
+export type RecordInput = Pick<RecordRow, "artist" | "title"> & Partial<Pick<RecordRow, EditableColumn | ReleaseOnlyColumn>>;
 export type RecordPatch = Partial<Pick<RecordRow, EditableColumn>>;
 
 export async function insertRecord(db: D1Database, input: RecordInput, now: string): Promise<RecordRow> {
   const columns: string[] = [];
   const values: unknown[] = [];
-  for (const column of EDITABLE_COLUMNS) {
+  for (const column of [...EDITABLE_COLUMNS, ...RELEASE_ONLY_COLUMNS]) {
     const value = input[column];
     if (value !== undefined) {
       columns.push(column);
@@ -454,6 +461,8 @@ export const DISCOGS_OWNED_COLUMNS = [
   "year",
   "country",
   "format",
+  "genres",
+  "styles",
   "cover_image_url",
   "thumb_url",
   "discogs_added_at",

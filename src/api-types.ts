@@ -16,6 +16,9 @@ export interface ApiRecord {
   year: number | null;
   country: string | null;
   format: string | null;
+  /** Discogs' genres ("Rock", "Jazz") and styles ("Indie Rock", "Hard Bop"). Empty for a record Discogs has not described. */
+  genres: string[];
+  styles: string[];
   media_condition: Grade;
   sleeve_condition: Grade;
   purchase_price_minor: number | null;

@@ -56,6 +56,9 @@ export interface Selection {
   /** An exact label or artist, as the data spells it. Set by links from elsewhere rather than typed. */
   label: string;
   artist: string;
+  /** One of Discogs' genres or styles the record must carry. */
+  genre: string;
+  style: string;
   spotify: YesNo;
   paid: YesNo;
   /** Value bounds in major units (pounds), inclusive. A record without a value is left out when either is set. */
@@ -84,6 +87,8 @@ export const DEFAULT_SELECTION: Readonly<Selection> = {
   desc: [],
   label: "",
   artist: "",
+  genre: "",
+  style: "",
   spotify: "",
   paid: "",
   min: null,
@@ -108,6 +113,8 @@ export const SELECTION_KEYS = [
   "desc",
   "label",
   "artist",
+  "genre",
+  "style",
   "spotify",
   "paid",
   "min",
@@ -158,6 +165,8 @@ export function readSelection(params: ParamsLike): Selection {
     desc: [...new Set(params.getAll("desc").map((d) => d.trim()).filter(Boolean))],
     label: params.get("label") ?? "",
     artist: params.get("artist") ?? "",
+    genre: params.get("genre") ?? "",
+    style: params.get("style") ?? "",
     spotify: oneOf(params.get("spotify"), YES_NO, ""),
     paid: oneOf(params.get("paid"), YES_NO, ""),
     min: amount(params.get("min")),
@@ -187,6 +196,8 @@ export function writeSelection(s: Selection): [string, string][] {
   for (const d of s.desc) put("desc", d);
   put("label", s.label);
   put("artist", s.artist);
+  put("genre", s.genre);
+  put("style", s.style);
   put("spotify", s.spotify);
   put("paid", s.paid);
   put("min", s.min);
@@ -200,7 +211,7 @@ export function writeSelection(s: Selection): [string, string][] {
 
 /** The narrow filters cleared; search, grade, status and sort order stay. */
 export function clearFilters(s: Selection): Selection {
-  return { ...s, sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", artist: "", spotify: "", paid: "", min: null, max: null, move: "", gain: "", how: "", scarce: false };
+  return { ...s, sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", artist: "", genre: "", style: "", spotify: "", paid: "", min: null, max: null, move: "", gain: "", how: "", scarce: false };
 }
 
 /** Only a record with a Discogs release, still in the collection, can be priced. */
@@ -254,6 +265,8 @@ export function matches(r: ListedRecord, s: Selection): boolean {
   }
   if (s.label && r.label !== s.label) return false;
   if (s.artist && r.artist !== s.artist) return false;
+  if (s.genre && !r.genres.includes(s.genre)) return false;
+  if (s.style && !r.styles.includes(s.style)) return false;
   if (s.spotify && (r.spotify_album_id !== null) !== (s.spotify === "yes")) return false;
   if (s.paid && (r.purchase_price_minor !== null) !== (s.paid === "yes")) return false;
   if (s.min !== null || s.max !== null) {
@@ -382,7 +395,7 @@ export function decadeOf(year: number | null | undefined): string | null {
 
 // --- What a selection could narrow to, and what it adds up to --------------------------------
 
-export type FacetKey = "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "spotify" | "paid" | "move" | "gain" | "how";
+export type FacetKey = "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "genre" | "style" | "spotify" | "paid" | "move" | "gain" | "how";
 
 export interface FacetOption {
   value: string;
@@ -393,7 +406,7 @@ export interface FacetOption {
 
 export type FacetOptions = Record<FacetKey, FacetOption[]>;
 
-const FACET_RESET: { [K in FacetKey]: Selection[K] } = { sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", spotify: "", paid: "", move: "", gain: "", how: "" };
+const FACET_RESET: { [K in FacetKey]: Selection[K] } = { sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", genre: "", style: "", spotify: "", paid: "", move: "", gain: "", how: "" };
 
 const DISC_LABELS: Record<Exclude<Discs, "">, string> = { "1": "1 disc", "2": "2 discs", "3+": "3 or more" };
 const YES_NO_LABELS = {
@@ -437,6 +450,8 @@ export function facetOptions(records: readonly ListedRecord[], s: Selection): Fa
     discs: inOrder(DISCS, tally(without("discs"), (_, f) => discsBucket(f.discs)), (v) => DISC_LABELS[v as Exclude<Discs, "">]),
     desc: byCount(tally(records.filter((r) => matches(r, s)), (_, f) => f.descriptors)),
     label: byCount(tally(without("label"), (r) => r.label)),
+    genre: byCount(tally(without("genre"), (r) => r.genres)),
+    style: byCount(tally(without("style"), (r) => r.styles)),
     spotify: yesNo("spotify", (r) => r.spotify_album_id !== null),
     paid: yesNo("paid", (r) => r.purchase_price_minor !== null),
     move: inOrder(MOVES, tally(without("move"), (r) => (r.change_minor === null ? null : r.change_minor > 0 ? "up" : r.change_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
@@ -487,6 +502,8 @@ export function activeFilters(s: Selection, money: (major: number) => string, ov
   const add = (key: string, label: string, reset: Partial<Selection>) => out.push({ key, label, next: { ...s, ...reset } });
   if (s.artist) add("artist", s.artist, { artist: "" });
   if (s.label) add("label", `On ${s.label}`, { label: "" });
+  if (s.genre) add("genre", s.genre, { genre: "" });
+  if (s.style) add("style", s.style, { style: "" });
   if (s.decade) add("decade", s.decade, { decade: "" });
   if (s.kind) add("kind", s.kind, { kind: "" });
   if (s.discs) add("discs", DISC_LABELS[s.discs], { discs: "" });

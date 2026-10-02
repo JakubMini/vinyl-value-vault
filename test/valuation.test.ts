@@ -34,6 +34,8 @@ describe("adding a record by Discogs id", () => {
       artists: [{ name: "Nirvana", join: "" }],
       labels: [{ name: "DGC", catno: "DGC 24425" }],
       formats: [{ name: "Vinyl", qty: "1", descriptions: ["LP", "Album"] }],
+      genres: ["Rock"],
+      styles: ["Grunge", "Alternative Rock"],
     });
     mockStats(NEVERMIND, { lowest_price: gbp(18.5), num_for_sale: 42, blocked_from_sale: false });
     mockSuggestions(NEVERMIND, { "Very Good Plus (VG+)": gbp(25), "Near Mint (NM or M-)": gbp(32.5) });
@@ -49,6 +51,8 @@ describe("adding a record by Discogs id", () => {
       year: 1991,
       country: "Europe",
       format: "LP, Album",
+      genres: ["Rock"],
+      styles: ["Grunge", "Alternative Rock"],
       current_value_minor: 2500,
       current_currency: "GBP",
       current_value: "£25.00",

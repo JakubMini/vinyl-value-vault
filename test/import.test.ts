@@ -44,6 +44,14 @@ describe("mapping a Discogs collection item", () => {
     });
   });
 
+  it("keeps Discogs' genres and styles as JSON text, and nothing when there are none", () => {
+    const described = item({ basic_information: { ...item().basic_information, genres: ["Classical", "Stage & Screen"], styles: ["Romantic"] } });
+    expect(collectionItemToRecord(described, FIELDS)).toMatchObject({ genres: '["Classical","Stage & Screen"]', styles: '["Romantic"]' });
+    const bare = collectionItemToRecord(item({ basic_information: { ...item().basic_information, genres: [], styles: [] } }), FIELDS);
+    expect(bare).not.toHaveProperty("genres");
+    expect(bare).not.toHaveProperty("styles");
+  });
+
   it("takes the grades from the collection's condition fields", () => {
     const record = collectionItemToRecord(
       item({ notes: [{ field_id: 1, value: "Near Mint (NM or M-)" }, { field_id: 2, value: "Very Good (VG)" }, { field_id: 3, value: "Signed" }] }),

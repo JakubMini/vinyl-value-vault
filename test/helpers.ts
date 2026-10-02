@@ -126,7 +126,18 @@ export function mockCollection(...pages: CollectionItem[][]): void {
 /** A vinyl item in the Discogs collection. */
 export function collectionItem(
   instanceId: number,
-  overrides: { releaseId?: number; artist?: string; title?: string; format?: string; media?: string; sleeve?: string; notes?: string; cover?: string } = {},
+  overrides: {
+    releaseId?: number;
+    artist?: string;
+    title?: string;
+    format?: string;
+    media?: string;
+    sleeve?: string;
+    notes?: string;
+    cover?: string;
+    genres?: string[];
+    styles?: string[];
+  } = {},
 ): CollectionItem {
   const releaseId = overrides.releaseId ?? instanceId + 1_000_000;
   const notes = [
@@ -147,6 +158,8 @@ export function collectionItem(
       formats: [{ name: overrides.format ?? "Vinyl", qty: "1", descriptions: ["LP", "Album"] }],
       cover_image: overrides.cover ?? `https://i.discogs.com/${instanceId}-cover.jpg`,
       thumb: `https://i.discogs.com/${instanceId}-thumb.jpg`,
+      ...(overrides.genres ? { genres: overrides.genres } : {}),
+      ...(overrides.styles ? { styles: overrides.styles } : {}),
     },
     notes,
   };
@@ -209,6 +222,8 @@ export function listedRecord(overrides: Partial<ListedRecord> = {}): ListedRecor
     year: null,
     country: null,
     format: null,
+    genres: [],
+    styles: [],
     media_condition: "VG+",
     sleeve_condition: "VG+",
     purchase_price_minor: null,
