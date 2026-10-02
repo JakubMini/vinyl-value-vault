@@ -1,5 +1,5 @@
 /** Every request the dashboard makes, as TanStack Query hooks, so caching and refetching live in one place. */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ApiRecord, CollectionResponse, ListedRecord, RecordDetail, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
 import { ApiError, api } from "./api";
@@ -10,8 +10,13 @@ export const keys = {
   records: ["records"] as const,
 };
 
-export function useCollection() {
-  return useQuery({ queryKey: keys.collection, queryFn: () => api<CollectionResponse>("/collection") });
+/** The total and counts, with `days` of daily totals for the chart. Switching range keeps the old chart until the new one arrives. */
+export function useCollection(days = 30) {
+  return useQuery({
+    queryKey: [...keys.collection, days],
+    queryFn: () => api<CollectionResponse>(`/collection?days=${days}`),
+    placeholderData: keepPreviousData,
+  });
 }
 
 /** The whole collection in one request; the table sorts and filters it in the browser. */

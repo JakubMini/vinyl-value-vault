@@ -18,6 +18,7 @@ import {
   type RecordRow,
   type SyncRunRow,
   collectionSummary,
+  dailyTotals,
   deleteRecord,
   getRecord,
   insertRecord,
@@ -72,6 +73,9 @@ const pageSchema = z.object({
 const recordsPageSchema = pageSchema.extend({ limit: z.coerce.number().int().min(1).max(1000).default(50) });
 
 const DAY_MS = 86_400_000;
+
+// Thirty days of daily totals by default; up to ten years on request.
+const collectionSchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
 
 // A year of daily prices by default; more on request.
 const historySchema = z.object({ limit: z.coerce.number().int().min(1).max(1000).default(365) });
@@ -158,8 +162,9 @@ app.use("*", async (c, next) => {
   return unauthorized(c);
 });
 
-app.get("/collection", async (c) => {
-  const [summary, history] = await Promise.all([collectionSummary(c.env.DB), listSnapshots(c.env.DB, 30)]);
+app.get("/collection", validate("query", collectionSchema), async (c) => {
+  const since = new Date(Date.now() - (c.req.valid("query").days - 1) * DAY_MS).toISOString().slice(0, 10);
+  const [summary, daily] = await Promise.all([collectionSummary(c.env.DB), dailyTotals(c.env.DB, since)]);
   const currency = c.env.VALUATION_CURRENCY;
   return c.json({
     currency,
@@ -169,7 +174,7 @@ app.get("/collection", async (c) => {
     valued_count: summary.valued_count,
     unpriced_count: summary.record_count - summary.valued_count,
     last_valued_at: summary.last_valued_at,
-    history,
+    daily,
   } satisfies CollectionResponse);
 });
 

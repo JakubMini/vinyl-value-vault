@@ -29,6 +29,7 @@ export async function resetDatabase(): Promise<void> {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM valuations"),
     env.DB.prepare("DELETE FROM collection_snapshots"),
+    env.DB.prepare("DELETE FROM collection_daily"),
     env.DB.prepare("DELETE FROM records"),
     env.DB.prepare("DELETE FROM sync_runs"),
     env.DB.prepare("DELETE FROM sync_ignored"),

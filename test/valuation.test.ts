@@ -2,6 +2,7 @@ import { createExecutionContext, createScheduledController, waitOnExecutionConte
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { writeSnapshot } from "../src/db";
 import worker from "../src/index";
 import { runValuationBatch } from "../src/valuation";
 import { api, expectAllMocksUsed, markSyncedRecently, mockRelease, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
@@ -120,9 +121,9 @@ describe("the scheduled valuation job", () => {
     await worker.scheduled(createScheduledController({ cron: "* * * * *" }), env, ctx);
     await waitOnExecutionContext(ctx);
 
-    const collection = (await (await api("/collection")).json()) as { total_minor: number; valued_count: number; unpriced_count: number; history: { total_minor: number }[] };
+    const collection = (await (await api("/collection")).json()) as { total_minor: number; valued_count: number; unpriced_count: number; daily: { total_minor: number }[] };
     expect(collection).toMatchObject({ total_minor: 4700, valued_count: 2, unpriced_count: 1 });
-    expect(collection.history.map((s) => s.total_minor)).toEqual([4700, 2200]);
+    expect(collection.daily.at(-1)?.total_minor).toBe(4700);
 
     const rows = await env.DB.prepare("SELECT id, current_value_minor FROM records WHERE id IN (?, ?) ORDER BY id").bind(fresh.id, never.id).all();
     expect(rows.results).toEqual([
@@ -190,5 +191,43 @@ describe("the scheduled valuation job", () => {
 
     const summary = await runValuationBatch(env);
     expect(summary).toMatchObject({ considered: 2, valued: 1, stoppedEarly: true, reason: "Discogs rate limit nearly exhausted" });
+  });
+});
+
+describe("the collection over time", () => {
+  async function value(recordId: number, minor: number): Promise<void> {
+    await env.DB.prepare("UPDATE records SET current_value_minor = ?, current_currency = 'GBP' WHERE id = ?").bind(minor, recordId).run();
+  }
+
+  it("keeps one total per day, the last of that day", async () => {
+    const a = await seedRecord({ artist: "A", title: "One" });
+    const b = await seedRecord({ artist: "B", title: "Two" });
+
+    await value(a.id, 1000);
+    await writeSnapshot(env.DB, "GBP", "2026-09-01T08:00:00.000Z");
+    await value(b.id, 500);
+    await writeSnapshot(env.DB, "GBP", "2026-09-01T21:30:00.000Z");
+    await value(a.id, 1200);
+    await writeSnapshot(env.DB, "GBP", "2026-09-02T07:15:00.000Z");
+
+    const body = (await (await api("/collection?days=3650")).json()) as { daily: { day: string; taken_at: string; total_minor: number; valued_count: number }[] };
+    expect(body.daily).toEqual([
+      expect.objectContaining({ day: "2026-09-01", taken_at: "2026-09-01T21:30:00.000Z", total_minor: 1500, valued_count: 2 }),
+      expect.objectContaining({ day: "2026-09-02", taken_at: "2026-09-02T07:15:00.000Z", total_minor: 1700, valued_count: 2 }),
+    ]);
+    const { n } = (await env.DB.prepare("SELECT COUNT(*) AS n FROM collection_snapshots").first<{ n: number }>())!;
+    expect(n).toBe(3);
+  });
+
+  it("returns only the days asked for", async () => {
+    const a = await seedRecord({ artist: "A", title: "One" });
+    await value(a.id, 1000);
+    await writeSnapshot(env.DB, "GBP", "2020-01-01T12:00:00.000Z");
+    await writeSnapshot(env.DB, "GBP", new Date().toISOString());
+
+    const recent = (await (await api("/collection?days=7")).json()) as { daily: unknown[] };
+    expect(recent.daily).toHaveLength(1);
+    expect((await api("/collection?days=0")).status).toBe(400);
+    expect((await api("/collection?days=3651")).status).toBe(400);
   });
 });

@@ -82,7 +82,7 @@ describe("the HTTP API", () => {
       record_count: 0,
       valued_count: 0,
       unpriced_count: 0,
-      history: [],
+      daily: [],
     });
   });
 

@@ -80,6 +80,16 @@ export interface Snapshot {
   valued_count: number;
 }
 
+/** The collection total at the end of a UTC day. */
+export interface DailyTotal {
+  day: string;
+  taken_at: string;
+  currency: string;
+  total_minor: number;
+  record_count: number;
+  valued_count: number;
+}
+
 export interface CollectionResponse {
   currency: string;
   total_minor: number;
@@ -88,7 +98,8 @@ export interface CollectionResponse {
   valued_count: number;
   unpriced_count: number;
   last_valued_at: string | null;
-  history: Snapshot[];
+  /** One total per day for the requested number of days, oldest first. */
+  daily: DailyTotal[];
 }
 
 export interface RecordsPage {
