@@ -63,7 +63,7 @@ The rule that keeps this simple is who owns what. **Discogs owns what a pressing
 
 The Workers free plan allows 50 outbound requests and 10 ms of CPU per invocation. Discogs allows 60 requests a minute, counted per source IP.
 
-That second limit turned out to be the real constraint. The first version ran every five minutes and asked for 20 records, about 40 calls at once. In production Discogs cut it off after about a dozen. Workers send requests from IP addresses shared with other Cloudflare customers, so part of each minute's allowance is often already spent by someone else.
+That second limit turned out to be the real constraint. Discogs' API sits behind Cloudflare, and when a Worker calls a site hosted on another Cloudflare account, Cloudflare gives the request one fixed client address, `2a06:98c0:3600::103` ([Cloudflare's header reference](https://developers.cloudflare.com/fundamentals/reference/http-headers/)). So to Discogs, every Worker on Cloudflare, from every customer, is a single caller with a single allowance of 60 requests a minute. The vault gets whatever is left. On 2 October 2026 most minutes got a 429 on their first call, while the same code on a laptop synced the whole collection in four calls.
 
 The job now works with that rather than against it:
 

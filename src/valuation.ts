@@ -8,9 +8,10 @@
  * currently listed is used instead, and the method is recorded so the two are
  * never confused.
  *
- * Why small, frequent batches: Discogs allows 60 requests a minute per source
- * IP, and Workers share outgoing IPs with other Cloudflare customers, so part of
- * that allowance is often used by someone else. Five records a minute (at most
+ * Why small, frequent batches: Discogs allows 60 requests a minute per client
+ * address, and every Worker calling a Cloudflare-hosted site such as Discogs
+ * presents the same one (2a06:98c0:3600::103), so most of that allowance is
+ * usually used by someone else. Five records a minute (at most
  * ten calls) spreads the load instead of bursting; the job reads the rate-limit
  * headers and stops early when the window is nearly spent. Records priced within
  * VALUATION_REFRESH_HOURS are skipped, so a fresh collection costs no calls.

@@ -25,8 +25,9 @@
   "vars": {
     "VALUATION_CURRENCY": "GBP",
     // Records per run. Each costs up to two Discogs calls. Discogs allows 60 a
-    // minute per IP and Workers share IPs, so small batches every minute beat
-    // big ones every five: in practice the window is often partly used already.
+    // minute per client address, and every Worker calling a Cloudflare-hosted
+    // site shares one (2a06:98c0:3600::103), so small batches every minute beat
+    // big ones every five: the window is usually partly used already.
     "VALUATION_BATCH_SIZE": "5",
     // A record priced within this many hours is not priced again.
     "VALUATION_REFRESH_HOURS": "24",
