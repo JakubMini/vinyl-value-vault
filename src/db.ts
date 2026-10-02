@@ -108,22 +108,57 @@ export async function getRecord(db: D1Database, id: number): Promise<RecordRow |
   return db.prepare("SELECT * FROM records WHERE id = ?").bind(id).first<RecordRow>();
 }
 
+/** A record as the collection list shows it, with two figures worked out in SQL. */
+export interface ListedRecordRow extends RecordRow {
+  /**
+   * Current value minus the value at the start of the window: the last price on or before
+   * `changeSince`, or, for a record first priced inside the window, its first price.
+   */
+  change_30d_minor: number | null;
+  /** Current value minus purchase price, only when both are in the same currency. */
+  gain_minor: number | null;
+}
+
+/**
+ * The collection, alphabetical, with change and gain. Both subqueries walk the
+ * valuations (record_id, valued_at) index and stop at one row, so a page costs about
+ * three rows read per record.
+ */
 export async function listRecords(
   db: D1Database,
   limit: number,
   offset: number,
-): Promise<{ records: RecordRow[]; total: number }> {
-  const [page, count] = await db.batch<RecordRow | { n: number }>([
-    db.prepare("SELECT * FROM records ORDER BY artist COLLATE NOCASE, year, title COLLATE NOCASE LIMIT ? OFFSET ?").bind(limit, offset),
+  changeSince: string,
+): Promise<{ records: ListedRecordRow[]; total: number }> {
+  const [page, count] = await db.batch<ListedRecordRow | { n: number }>([
+    db
+      .prepare(
+        `SELECT r.*,
+           r.current_value_minor - COALESCE(
+             (SELECT v.value_minor FROM valuations v
+              WHERE v.record_id = r.id AND v.currency = r.current_currency AND v.valued_at <= ?1
+              ORDER BY v.valued_at DESC, v.id DESC LIMIT 1),
+             (SELECT v.value_minor FROM valuations v
+              WHERE v.record_id = r.id AND v.currency = r.current_currency
+              ORDER BY v.valued_at ASC, v.id ASC LIMIT 1)
+           ) AS change_30d_minor,
+           CASE WHEN r.purchase_price_minor IS NOT NULL AND r.purchase_currency = r.current_currency
+                THEN r.current_value_minor - r.purchase_price_minor END AS gain_minor
+         FROM records r
+         ORDER BY r.artist COLLATE NOCASE, r.year, r.title COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3`,
+      )
+      .bind(changeSince, limit, offset),
     db.prepare("SELECT COUNT(*) AS n FROM records"),
   ]);
   return {
-    records: (page?.results ?? []) as RecordRow[],
+    records: (page?.results ?? []) as ListedRecordRow[],
     total: ((count?.results?.[0] as { n: number } | undefined)?.n) ?? 0,
   };
 }
 
-export async function updateRecord(db: D1Database, id: number, patch: RecordPatch, now: string): Promise<RecordRow | null> {
+/** `column = ?` pairs for the editable fields a patch sets. Column names come from EDITABLE_COLUMNS, never from input. */
+function patchAssignments(patch: RecordPatch): { assignments: string[]; values: unknown[] } {
   const assignments: string[] = [];
   const values: unknown[] = [];
   for (const column of EDITABLE_COLUMNS) {
@@ -133,6 +168,11 @@ export async function updateRecord(db: D1Database, id: number, patch: RecordPatc
       values.push(value);
     }
   }
+  return { assignments, values };
+}
+
+export async function updateRecord(db: D1Database, id: number, patch: RecordPatch, now: string): Promise<RecordRow | null> {
+  const { assignments, values } = patchAssignments(patch);
   assignments.push("updated_at = ?");
   values.push(now, id);
 
@@ -140,6 +180,49 @@ export async function updateRecord(db: D1Database, id: number, patch: RecordPatc
     .prepare(`UPDATE records SET ${assignments.join(", ")} WHERE id = ? RETURNING *`)
     .bind(...values)
     .first<RecordRow>();
+}
+
+/** The newest price that came from Discogs (not from a regrade), with its raw payload. */
+export async function latestDiscogsValuation(db: D1Database, recordId: number): Promise<ValuationRow | null> {
+  return db
+    .prepare("SELECT * FROM valuations WHERE record_id = ? AND source = 'discogs' ORDER BY valued_at DESC, id DESC LIMIT 1")
+    .bind(recordId)
+    .first<ValuationRow>();
+}
+
+/**
+ * Apply a patch that changes the media grade. With a value for the new grade (worked out from
+ * stored suggestions), it is recorded as a 'regrade' valuation and becomes the current value,
+ * in one transaction. Either way last_valued_at is cleared, which puts the record at the front
+ * of the valuation queue so the cron confirms the price with fresh data.
+ */
+export async function regradeRecord(
+  db: D1Database,
+  id: number,
+  patch: RecordPatch,
+  value: { value_minor: number; currency: string; lowest_listing_minor: number | null; num_for_sale: number | null } | null,
+  now: string,
+): Promise<RecordRow | null> {
+  const { assignments, values } = patchAssignments(patch);
+  assignments.push("last_valued_at = NULL", "updated_at = ?");
+  values.push(now);
+  if (value) {
+    assignments.push("current_value_minor = ?", "current_currency = ?", "last_valuation_error = NULL");
+    values.push(value.value_minor, value.currency);
+  }
+  const update = db.prepare(`UPDATE records SET ${assignments.join(", ")} WHERE id = ? RETURNING *`).bind(...values, id);
+  if (!value) return update.first<RecordRow>();
+
+  const [, updated] = await db.batch<RecordRow>([
+    db
+      .prepare(
+        `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, raw)
+         VALUES (?, ?, 'regrade', 'price_suggestion', ?, ?, ?, ?, NULL)`,
+      )
+      .bind(id, now, value.currency, value.value_minor, value.lowest_listing_minor, value.num_for_sale),
+    update,
+  ]);
+  return updated?.results[0] ?? null;
 }
 
 /** Delete a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. */

@@ -11,8 +11,9 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 
 import { AccessUnavailable, verifyAccessJwt } from "./access";
-import type { ApiRecord, CollectionResponse, SyncRun } from "./api-types";
+import type { ApiRecord, CollectionResponse, ListedRecord, RecordsPage, SyncRun } from "./api-types";
 import {
+  type ListedRecordRow,
   type RecordInput,
   type RecordRow,
   type SyncRunRow,
@@ -31,7 +32,7 @@ import { GRADES } from "./grades";
 import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
 import { syncCollection } from "./sync";
-import { discogsFromEnv, runValuationBatch, valueRecord } from "./valuation";
+import { discogsFromEnv, regrade, runValuationBatch, valueRecord } from "./valuation";
 
 const grade = z.enum(GRADES);
 
@@ -66,6 +67,11 @@ const pageSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+// A personal collection fits in one page, so the dashboard can sort and filter it in the browser.
+const recordsPageSchema = pageSchema.extend({ limit: z.coerce.number().int().min(1).max(1000).default(50) });
+
+const DAY_MS = 86_400_000;
+
 const flag = z
   .enum(["true", "false"])
   .optional()
@@ -92,6 +98,10 @@ function presentRecord(row: RecordRow): ApiRecord {
         ? formatMinor(row.current_value_minor, row.current_currency)
         : null,
   };
+}
+
+function presentListedRecord(row: ListedRecordRow): ListedRecord {
+  return { ...presentRecord(row), change_30d_minor: row.change_30d_minor, gain_minor: row.gain_minor };
 }
 
 function presentSyncRun(run: SyncRunRow): SyncRun {
@@ -159,10 +169,11 @@ app.get("/collection", async (c) => {
   } satisfies CollectionResponse);
 });
 
-app.get("/records", validate("query", pageSchema), async (c) => {
+app.get("/records", validate("query", recordsPageSchema), async (c) => {
   const { limit, offset } = c.req.valid("query");
-  const { records, total } = await listRecords(c.env.DB, limit, offset);
-  return c.json({ records: records.map(presentRecord), total, limit, offset });
+  const changeSince = new Date(Date.now() - 30 * DAY_MS).toISOString();
+  const { records, total } = await listRecords(c.env.DB, limit, offset, changeSince);
+  return c.json({ records: records.map(presentListedRecord), total, limit, offset } satisfies RecordsPage);
 });
 
 // ?value=false skips the immediate valuation; the cron prices the record later. Bulk imports use it
@@ -226,10 +237,20 @@ app.get("/records/:id", async (c) => {
   return c.json({ ...presentRecord(record), valuations });
 });
 
+// A new media grade re-prices the record straight away from stored Discogs suggestions; see regrade().
 app.patch("/records/:id", validate("json", patchRecordSchema), async (c) => {
   const id = parseId(c.req.param("id"));
   if (id === null) return c.json({ error: "Invalid id" }, 400);
-  const record = await updateRecord(c.env.DB, id, stripUndefined(c.req.valid("json")), new Date().toISOString());
+  const existing = await getRecord(c.env.DB, id);
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const patch = stripUndefined(c.req.valid("json"));
+  const now = new Date().toISOString();
+  const { media_condition } = patch;
+  const record =
+    media_condition !== undefined && media_condition !== existing.media_condition
+      ? await regrade(c.env.DB, existing, { ...patch, media_condition }, c.env.VALUATION_CURRENCY, now)
+      : await updateRecord(c.env.DB, id, patch, now);
   if (!record) return c.json({ error: "Not found" }, 404);
   return c.json(presentRecord(record));
 });

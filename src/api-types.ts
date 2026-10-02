@@ -37,6 +37,14 @@ export interface ApiRecord {
   updated_at: string;
 }
 
+/** A record in the collection list, with two figures worked out by the API. */
+export interface ListedRecord extends ApiRecord {
+  /** Value now minus value 30 days ago (or at its first price, if that was more recent). */
+  change_30d_minor: number | null;
+  /** Value now minus what was paid, when both are in the same currency. */
+  gain_minor: number | null;
+}
+
 export interface Snapshot {
   id: number;
   taken_at: string;
@@ -58,7 +66,7 @@ export interface CollectionResponse {
 }
 
 export interface RecordsPage {
-  records: ApiRecord[];
+  records: ListedRecord[];
   total: number;
   limit: number;
   offset: number;
