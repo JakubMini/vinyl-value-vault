@@ -1,0 +1,223 @@
+/**
+ * The HTTP API. Everything except /health needs `Authorization: Bearer <API_KEY>`.
+ * Amounts are integers in minor units; a formatted string is included for convenience.
+ */
+import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { timingSafeEqual } from "hono/utils/buffer";
+import { validator } from "hono/validator";
+import { z } from "zod";
+
+import {
+  type RecordInput,
+  type RecordRow,
+  collectionSummary,
+  deleteRecord,
+  getRecord,
+  insertRecord,
+  listRecords,
+  listSnapshots,
+  listValuations,
+  updateRecord,
+} from "./db";
+import { DiscogsError, releaseToRecordFields } from "./discogs";
+import { GRADES } from "./grades";
+import { formatMinor } from "./money";
+import { discogsFromEnv, runValuationBatch, valueRecord } from "./valuation";
+
+const grade = z.enum(GRADES);
+
+const recordFields = z.object({
+  discogs_release_id: z.number().int().positive().nullable(),
+  artist: z.string().trim().min(1),
+  title: z.string().trim().min(1),
+  label: z.string().trim().nullable(),
+  catalogue_number: z.string().trim().nullable(),
+  year: z.number().int().min(1900).max(2100).nullable(),
+  country: z.string().trim().nullable(),
+  format: z.string().trim().nullable(),
+  media_condition: grade,
+  sleeve_condition: grade,
+  purchase_price_minor: z.number().int().nonnegative().nullable(),
+  purchase_currency: z.string().trim().length(3).toUpperCase().nullable(),
+  purchased_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD").nullable(),
+  notes: z.string().nullable(),
+});
+
+const createRecordSchema = recordFields
+  .partial()
+  .refine((b) => Boolean(b.discogs_release_id) || Boolean(b.artist && b.title), {
+    message: "Provide a discogs_release_id, or both artist and title",
+  });
+
+const patchRecordSchema = recordFields.partial().refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" });
+
+const pageSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+/** Validate part of a request with a Zod schema. A failure is a 400 that lists the problems. */
+function validate<U extends "json" | "query", S extends z.ZodType>(target: U, schema: S) {
+  return validator(target, (value, c) => {
+    const result = schema.safeParse(value);
+    if (!result.success) return c.json({ error: "Invalid request", issues: result.error.issues }, 400);
+    return result.data as z.output<S>;
+  });
+}
+
+function presentRecord(row: RecordRow) {
+  return {
+    ...row,
+    current_value:
+      row.current_value_minor !== null && row.current_currency !== null
+        ? formatMinor(row.current_value_minor, row.current_currency)
+        : null,
+  };
+}
+
+function parseId(raw: string): number | null {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function stripUndefined<T extends object>(value: T): { [K in keyof T]: Exclude<T[K], undefined> } {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
+}
+
+export const app = new Hono<{ Bindings: Env }>();
+
+app.get("/health", (c) => c.json({ ok: true, service: "vinyl-value-vault", now: new Date().toISOString() }));
+
+// Everything below requires the API key. Fail closed if the secret was never set.
+// The comparison hashes both sides and compares in constant time.
+app.use("*", async (c, next) => {
+  const expected = c.env.API_KEY;
+  if (!expected) return c.json({ error: "Server is missing the API_KEY secret" }, 500);
+
+  const presented = /^Bearer\s+(\S+)$/i.exec(c.req.header("Authorization") ?? "")?.[1];
+  if (!presented || !(await timingSafeEqual(expected, presented))) {
+    c.header("WWW-Authenticate", 'Bearer realm="vinyl-value-vault"');
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  await next();
+});
+
+app.get("/collection", async (c) => {
+  const [summary, history] = await Promise.all([collectionSummary(c.env.DB), listSnapshots(c.env.DB, 30)]);
+  const currency = c.env.VALUATION_CURRENCY;
+  return c.json({
+    currency,
+    total_minor: summary.total_minor,
+    total: formatMinor(summary.total_minor, currency),
+    record_count: summary.record_count,
+    valued_count: summary.valued_count,
+    unpriced_count: summary.record_count - summary.valued_count,
+    last_valued_at: summary.last_valued_at,
+    history,
+  });
+});
+
+app.get("/records", validate("query", pageSchema), async (c) => {
+  const { limit, offset } = c.req.valid("query");
+  const { records, total } = await listRecords(c.env.DB, limit, offset);
+  return c.json({ records: records.map(presentRecord), total, limit, offset });
+});
+
+app.post("/records", validate("json", createRecordSchema), async (c) => {
+  const body = c.req.valid("json");
+  const now = new Date().toISOString();
+  const discogs = discogsFromEnv(c.env);
+
+  // Adding by Discogs id is enough: fetch the pressing's details to fill in the rest.
+  let fromDiscogs: Partial<RecordInput> = {};
+  if (body.discogs_release_id && !(body.artist && body.title)) {
+    const release = await discogs.getRelease(body.discogs_release_id);
+    if (release === null) return c.json({ error: `Discogs release ${body.discogs_release_id} not found` }, 422);
+    fromDiscogs = releaseToRecordFields(release);
+  }
+
+  const artist = body.artist ?? fromDiscogs.artist;
+  const title = body.title ?? fromDiscogs.title;
+  if (!artist || !title) return c.json({ error: "Could not determine artist and title" }, 422);
+
+  const input: RecordInput = {
+    ...fromDiscogs,
+    ...stripUndefined(body),
+    artist,
+    title,
+    media_condition: body.media_condition ?? "VG+",
+    sleeve_condition: body.sleeve_condition ?? "VG+",
+  };
+
+  let record = await insertRecord(c.env.DB, input, now);
+
+  // Price it straight away so the caller sees a value. A failure is noted on the record, not fatal.
+  if (record.discogs_release_id !== null) {
+    try {
+      await valueRecord(c.env.DB, discogs, record, c.env.VALUATION_CURRENCY, now);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "valuation.inline_failed", record_id: record.id, error: String(error) }));
+    }
+    record = (await getRecord(c.env.DB, record.id)) ?? record;
+  }
+
+  return c.json(presentRecord(record), 201);
+});
+
+app.get("/records/:id", async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  const record = await getRecord(c.env.DB, id);
+  if (!record) return c.json({ error: "Not found" }, 404);
+  const valuations = await listValuations(c.env.DB, id, 50);
+  return c.json({ ...presentRecord(record), valuations });
+});
+
+app.patch("/records/:id", validate("json", patchRecordSchema), async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  const record = await updateRecord(c.env.DB, id, stripUndefined(c.req.valid("json")), new Date().toISOString());
+  if (!record) return c.json({ error: "Not found" }, 404);
+  return c.json(presentRecord(record));
+});
+
+app.delete("/records/:id", async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  const deleted = await deleteRecord(c.env.DB, id);
+  return deleted ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
+});
+
+app.post("/records/:id/revalue", async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  const record = await getRecord(c.env.DB, id);
+  if (!record) return c.json({ error: "Not found" }, 404);
+  const outcome = await valueRecord(c.env.DB, discogsFromEnv(c.env), record, c.env.VALUATION_CURRENCY, new Date().toISOString());
+  const updated = (await getRecord(c.env.DB, id)) ?? record;
+  return c.json({ outcome, record: presentRecord(updated) });
+});
+
+// Run a valuation batch on demand. The cron does the same thing every five minutes.
+app.post("/valuations/run", async (c) => {
+  const limit = Number(c.req.query("limit"));
+  const summary = await runValuationBatch(c.env, Number.isInteger(limit) && limit > 0 ? { limit } : {});
+  return c.json(summary);
+});
+
+app.get("/snapshots", validate("query", pageSchema), async (c) => {
+  const { limit } = c.req.valid("query");
+  return c.json({ snapshots: await listSnapshots(c.env.DB, limit) });
+});
+
+app.notFound((c) => c.json({ error: "Not found" }, 404));
+
+app.onError((error, c) => {
+  if (error instanceof HTTPException) return error.getResponse();
+  console.error(JSON.stringify({ event: "request.failed", path: c.req.path, error: error.message, stack: error.stack }));
+  if (error instanceof DiscogsError) return c.json({ error: "Discogs request failed", upstream_status: error.status }, 502);
+  return c.json({ error: "Internal error" }, 500);
+});
