@@ -19,6 +19,11 @@ export interface Release {
   thumb?: string;
 }
 
+/** Discogs tells same-named artists and labels apart with a number: "Nirvana (2)", "Joker (2)". Collectors never write it. */
+function plainName(name: string): string {
+  return name.replace(/\s\(\d+\)$/, "");
+}
+
 /**
  * Turn a Discogs release into the fields a record needs, so adding by id is enough. Genres and
  * styles are kept as JSON text, the form they take in the database, so a sync can compare them
@@ -38,8 +43,7 @@ export function releaseToRecordFields(release: Release): {
   const artist =
     (release.artists ?? [])
       .map((a) => {
-        // Discogs disambiguates duplicate names with a suffix like "Nirvana (2)".
-        const name = (a.anv || a.name).replace(/\s\(\d+\)$/, "");
+        const name = plainName(a.anv || a.name);
         if (!a.join) return name;
         // Discogs stores joiners bare: "," "&" "feat." "Vs". A comma hugs the name before it.
         return a.join === "," ? `${name}, ` : `${name} ${a.join} `;
@@ -60,7 +64,7 @@ export function releaseToRecordFields(release: Release): {
   return {
     artist,
     title: release.title,
-    ...(label?.name ? { label: label.name } : {}),
+    ...(label?.name ? { label: plainName(label.name) } : {}),
     ...(label?.catno && label.catno !== "none" ? { catalogue_number: label.catno } : {}),
     ...(release.year ? { year: release.year } : {}),
     ...(release.country ? { country: release.country } : {}),

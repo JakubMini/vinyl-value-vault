@@ -52,6 +52,18 @@ describe("mapping a Discogs collection item", () => {
     expect(bare).not.toHaveProperty("styles");
   });
 
+  it("drops the number Discogs adds to tell same-named labels and artists apart", () => {
+    const numbered = item({ basic_information: { ...item().basic_information, labels: [{ name: "Joker (2)", catno: "SM 3719" }] } });
+    expect(collectionItemToRecord(numbered, FIELDS)).toMatchObject({
+      label: "Joker",
+      catalogue_number: "SM 3719",
+      artist: "Edvard Grieg, Academy Of St. Martin-in-the-Fields & Neville Marriner",
+    });
+    // Only a trailing number in brackets goes; anything else in brackets is part of the name.
+    const bracketed = item({ basic_information: { ...item().basic_information, labels: [{ name: "Polskie Nagrania Muza (Reissue Series)" }] } });
+    expect(collectionItemToRecord(bracketed, FIELDS).label).toBe("Polskie Nagrania Muza (Reissue Series)");
+  });
+
   it("takes the grades from the collection's condition fields", () => {
     const record = collectionItemToRecord(
       item({ notes: [{ field_id: 1, value: "Near Mint (NM or M-)" }, { field_id: 2, value: "Very Good (VG)" }, { field_id: 3, value: "Signed" }] }),
