@@ -58,6 +58,16 @@ export interface SnapshotRow {
   valued_count: number;
 }
 
+/** The collection total at the end of a UTC day. */
+export interface DailyTotalRow {
+  day: string;
+  taken_at: string;
+  currency: string;
+  total_minor: number;
+  record_count: number;
+  valued_count: number;
+}
+
 export interface CollectionSummary {
   record_count: number;
   valued_count: number;
@@ -339,17 +349,39 @@ export async function collectionSummary(db: D1Database): Promise<CollectionSumma
   return row ?? { record_count: 0, valued_count: 0, total_minor: 0, last_valued_at: null };
 }
 
+/** Snapshot the collection total, and make it the day's total, in one transaction. */
 export async function writeSnapshot(db: D1Database, currency: string, now: string): Promise<SnapshotRow> {
   const summary = await collectionSummary(db);
-  const row = await db
-    .prepare(
-      `INSERT INTO collection_snapshots (taken_at, currency, total_minor, record_count, valued_count)
-       VALUES (?, ?, ?, ?, ?) RETURNING *`,
-    )
-    .bind(now, currency, summary.total_minor, summary.record_count, summary.valued_count)
-    .first<SnapshotRow>();
+  const values = [now, currency, summary.total_minor, summary.record_count, summary.valued_count] as const;
+  const [snapshot] = await db.batch<SnapshotRow>([
+    db
+      .prepare(
+        `INSERT INTO collection_snapshots (taken_at, currency, total_minor, record_count, valued_count)
+         VALUES (?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .bind(...values),
+    db
+      .prepare(
+        `INSERT INTO collection_daily (day, taken_at, currency, total_minor, record_count, valued_count)
+         VALUES (substr(?1, 1, 10), ?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (day) DO UPDATE SET
+           taken_at = excluded.taken_at, currency = excluded.currency, total_minor = excluded.total_minor,
+           record_count = excluded.record_count, valued_count = excluded.valued_count`,
+      )
+      .bind(...values),
+  ]);
+  const row = snapshot?.results[0];
   if (!row) throw new Error("Snapshot insert returned no row");
   return row;
+}
+
+/** One total per day from `sinceDay` (YYYY-MM-DD) on, oldest first. Reads one row per day. */
+export async function dailyTotals(db: D1Database, sinceDay: string): Promise<DailyTotalRow[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM collection_daily WHERE day >= ? ORDER BY day")
+    .bind(sinceDay)
+    .all<DailyTotalRow>();
+  return results;
 }
 
 export async function listSnapshots(db: D1Database, limit: number): Promise<SnapshotRow[]> {

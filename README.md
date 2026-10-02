@@ -12,7 +12,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth, lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when. A chart of the whole collection's value comes next.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
 ## How it works
@@ -74,6 +74,8 @@ The job now works with that rather than against it:
 
 At best that is 7,200 record prices a day, far more than the daily refresh of a personal collection needs. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
 
+The database has a budget too: the free plan allows 5 million D1 rows read a day. The dashboard is built to stay far inside it. The collection list reads about three rows per record, using indexes, and the value chart reads one row per day from a small daily table rather than every snapshot the job writes.
+
 Expected running cost at this scale: nothing.
 
 ## The stack, and why
@@ -93,13 +95,14 @@ Expected running cost at this scale: nothing.
 
 ## Data model
 
-Five tables. Money is stored as integers in minor units (pence) so there is no floating-point drift. Times are ISO-8601 UTC strings. Condition uses the Goldmine scale collectors use: M, NM, VG+, VG, G+, G, F, P.
+Six tables. Money is stored as integers in minor units (pence) so there is no floating-point drift. Times are ISO-8601 UTC strings. Condition uses the Goldmine scale collectors use: M, NM, VG+, VG, G+, G, F, P.
 
 | Table | One row per | Notes |
 | --- | --- | --- |
 | `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs and a flag for records that have left the Discogs collection. |
 | `valuations` | price fetched for a record | Append-only history, with the method used, the grade the price was for, and the raw Discogs payload for re-deriving later (a regrade does exactly that). |
-| `collection_snapshots` | valuation run that changed something | The collection total over time, ready to chart. |
+| `collection_snapshots` | valuation run that changed something | The collection total after every run, roughly one a minute while prices are being refreshed. |
+| `collection_daily` | day | The last total of each day, kept current by the job. What the chart reads. |
 | `sync_runs` | collection sync | What each sync added, refreshed and flagged, and why one stopped early. Also how the cron knows when the next sync is due. |
 | `sync_ignored` | record deleted on purpose | Discogs collection items the sync must not bring back. |
 
@@ -112,7 +115,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | Method and path | What it does |
 | --- | --- |
 | `GET /api/health` | Liveness check. No key needed. |
-| `GET /api/collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
+| `GET /api/collection?days=` | Total value, record counts, when the last price arrived, and one total per day for the last `days` days (30 by default, up to ten years), oldest first. |
 | `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, and a link to the release on Discogs. |
@@ -264,10 +267,10 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Dashboard, first step: the total, and syncing with Discogs
 - [x] Dashboard: the collection table, sorting and grading
 - [x] Dashboard: each record's page and price history
-- [ ] Dashboard: the collection's value over time, and its biggest risers and fallers
+- [x] Dashboard: the collection's value over time, and its biggest risers and fallers
 - [ ] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"
-- [ ] Gain and loss against purchase price, per record and overall
+- [x] Gain and loss against purchase price, per record and overall
 
 ## Licence
 

@@ -794,3 +794,78 @@ th[aria-sort="descending"] {
     font-size: 32px;
   }
 }
+
+/* Overview */
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--page);
+}
+
+.segmented button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.segmented button:hover {
+  color: var(--ink);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+/* While a new range loads, the old chart stays, dimmed, instead of a blank or a jump. */
+.refetching {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.movers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.movers li {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-variant-numeric: tabular-nums;
+}
+
+.movers li:last-child {
+  border-bottom: 0;
+}
+
+.movers .thumb {
+  width: 36px;
+  height: 36px;
+}
+
+.movers-name {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  display: grid;
+}
+
+.movers-name:hover .record-title {
+  text-decoration: underline;
+}
