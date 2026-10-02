@@ -13,6 +13,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Keeps the prices fresh.** Every minute a scheduled job takes up to 15 records whose price is more than a day old and asks Discogs what they are worth today, by way of my laptop. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts and searches, and narrows by status, grade, decade, format, number of discs, pressing (compilation, reissue, mono...), label, sleeve, value, Spotify and price paid, with quick views such as most valuable, biggest risers and needs a price. A "For sale" column shows how many copies are on Discogs, with a quick view for the scarce ones (three or fewer). Whatever is shown is added up: what it is worth, how that moved in 30 days, the gain on what was paid. Every filter is in the URL, so a view can be bookmarked. I can grade each record in place, re-price the records I tick (or all of them: "revalue every 1970s LP" is a filter, a tick and a button), and run or preview a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
+- **Shows where the value is.** An Insights page cuts the collection by decade, format, grade, label or artist, by value or by count, as bars that each lead to the table narrowed to what they count. It shows how the values are spread across price bands, how much of the total the ten most valuable records hold, what a typical record is worth, how many prices rose and fell in 30 days, how many were priced from a suggestion rather than a listing, how many copies are for sale across the collection, and how the collection grew, counted from the day each record joined on Discogs. All of it comes from the same list the table already loads, so it costs no extra reads.
 - **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -321,6 +322,7 @@ src/
   sync.ts        the Discogs collection sync: add, refresh, flag what has gone
   spotify.ts     reading a Spotify album from a pasted link; Spotify URLs (shared with the dashboard)
   select.ts      choosing records: search, filters, sort order and the URL they live in (shared with the dashboard)
+  insights.ts    the collection cut different ways: value by decade, format, grade, label, artist; spread; growth (shared)
   discogs.ts     Discogs API client
   release.ts     Discogs release and collection item -> record mapping
   db.ts          every SQL statement, typed
@@ -350,7 +352,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Gain and loss against purchase price, per record and overall
 - [x] Dashboard: selection criteria for the table (decade, format, label, grades, value, Spotify, price paid), quick filters, and totals for whatever is shown
 - [x] Market signals: copies for sale, the cheapest listing and how each price was found, on the record page and in the table
-- [ ] Dashboard: an Insights page: where the value sits by decade, format, grade, label and artist; the spread of values; how the collection has grown
+- [x] Dashboard: an Insights page: where the value sits by decade, format, grade, label and artist; the spread of values; how the collection has grown
 - [ ] Price change over a chosen window (a week, a month, a quarter, a year), for the dashboard and the Alexa skill
 - [ ] Genres and styles from Discogs, for filters and charts
 - [ ] Record page: the cheapest listing beside the value, where the record ranks in the collection, more by the same artist or label

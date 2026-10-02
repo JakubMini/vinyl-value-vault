@@ -1,6 +1,7 @@
 import { Link, NavLink, Route, Routes } from "react-router";
 
 import { Collection } from "./pages/Collection";
+import { Insights } from "./pages/Insights";
 import { Overview } from "./pages/Overview";
 import { Record } from "./pages/Record";
 import { Sync } from "./pages/Sync";
@@ -8,6 +9,7 @@ import { Sync } from "./pages/Sync";
 const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/collection", label: "Collection" },
+  { to: "/insights", label: "Insights" },
   { to: "/sync", label: "Sync" },
 ];
 
@@ -34,6 +36,7 @@ export function App() {
           <Route path="/" element={<Overview />} />
           <Route path="/collection" element={<Collection />} />
           <Route path="/records/:id" element={<Record />} />
+          <Route path="/insights" element={<Insights />} />
           <Route path="/sync" element={<Sync />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
