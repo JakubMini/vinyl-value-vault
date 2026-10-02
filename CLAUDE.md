@@ -90,3 +90,9 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 
 The Discogs collection syncs itself once a day. To sync now, `POST /api/sync/discogs` (add
 `?dry_run=true` to preview); see the README.
+
+The live Worker is behind Cloudflare Access. A `curl` to production with only the API key is
+redirected to the login page; it needs an Access service token (`CF-Access-Client-Id` and
+`CF-Access-Client-Secret`). To inspect production without one, read D1 directly:
+`npx wrangler d1 execute vinyl-value-vault --remote --config wrangler.jsonc --command "SELECT ..."`
+(after `wrangler whoami`), or `npx wrangler tail`.

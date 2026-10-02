@@ -4,7 +4,7 @@
 
 A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)), and for now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built and deployed; it opens to me once Cloudflare Access is switched on (see [Who can get in](#who-can-get-in)).
+> **Status:** live on Cloudflare since 2 October 2026, behind a Cloudflare Access login. My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)), and for now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built, deployed and in use (see [Who can get in](#who-can-get-in)).
 
 ## What it does
 
@@ -168,11 +168,11 @@ Two kinds of caller, two credentials. Everything except `/api/health` needs one 
 Setting Access up, once:
 
 1. In the Cloudflare dashboard (the personal account): Workers & Pages → vinyl-value-vault → Settings → Domains & Routes → enable Cloudflare Access, for workers.dev and for Preview URLs. The Zero Trust free plan covers up to 50 users, though signing up asks for a payment method.
-2. In Zero Trust → Access → Applications, open the application it created. Limit its policy to my email and copy its Application Audience (AUD) tag.
+2. In Zero Trust → Access → Applications, open the application it created. Its policy lets in members of my Cloudflare account, which is only me. Copy its Application Audience (AUD) tag.
 3. Set `ACCESS_TEAM_DOMAIN` (`https://<team>.cloudflareaccess.com`) and `ACCESS_AUD` in `wrangler.jsonc`, and deploy. While either is empty, the Worker refuses every Access token and only the API key works.
 4. For scripts, create a service token under Zero Trust → Access → Service Auth and allow it in the application's policies.
 
-With Access on, `/api/health` is behind the login too.
+Access is on, with both values set in `wrangler.jsonc`. Every path, `/api/health` included, is behind the login; a request without an Access session is sent to the login page before it reaches the Worker.
 
 ## Running it locally
 
@@ -200,13 +200,12 @@ npm run check      # regenerate binding types, typecheck, run the tests
 
 ## Syncing the Discogs collection
 
-The cron does this once a day on its own. To sync now, or to preview first:
+The cron does this once a day on its own. To sync now, or to preview first, use the dashboard's Sync page. From a script, the request has to get through Access first, so it also carries a service token:
 
 ```bash
 curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs?dry_run=true" \
-  -H "Authorization: Bearer $API_KEY"
-curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs" \
-  -H "Authorization: Bearer $API_KEY"
+  -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+  -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
 ```
 
 The Worker uses `DISCOGS_TOKEN` to find the Discogs account behind it, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details and cover art from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
