@@ -129,51 +129,67 @@ export async function getRecord(db: D1Database, id: number): Promise<RecordRow |
   return db.prepare("SELECT * FROM records WHERE id = ?").bind(id).first<RecordRow>();
 }
 
-/** A record as the collection list shows it, with two figures worked out in SQL. */
+/** A record as the collection list shows it, with three figures worked out in SQL. */
 export interface ListedRecordRow extends RecordRow {
   /**
-   * Current value minus the value at the start of the window: the last price on or before
-   * `changeSince`, or, for a record first priced inside the window, its first price.
+   * Value now minus value 30 days ago: the last price on or before then, or the record's first
+   * price when it has not been priced that long. Null when it has no value.
    */
   change_30d_minor: number | null;
-  /** Current value minus purchase price, only when both are in the same currency. */
+  /** The same over the window the caller asked for; equal to change_30d_minor by default. */
+  change_minor: number | null;
+  /** Value now minus the price paid, when both are in the same currency. */
   gain_minor: number | null;
 }
 
+/** The start of a change window, as a time. */
+export interface ChangeWindows {
+  since30: string;
+  /** Another window's start, or null when 30 days is all that was asked for. */
+  since: string | null;
+}
+
+/** The change since a point in time, bound as `param`: the last price on or before it, else the first price ever. */
+const changeSince = (param: string) => `r.current_value_minor - COALESCE(
+             (SELECT v.value_minor FROM valuations v
+              WHERE v.record_id = r.id AND v.currency = r.current_currency AND v.valued_at <= ${param}
+              ORDER BY v.valued_at DESC, v.id DESC LIMIT 1),
+             (SELECT v.value_minor FROM valuations v
+              WHERE v.record_id = r.id AND v.currency = r.current_currency
+              ORDER BY v.valued_at ASC, v.id ASC LIMIT 1)
+           )`;
+
 /**
- * The collection, alphabetical, with change and gain. Both subqueries walk the
- * valuations (record_id, valued_at) index and stop at one row, so a page costs about
- * three rows read per record.
+ * The collection, alphabetical, with change and gain. Each change subquery walks the
+ * valuations (record_id, valued_at) index and stops at one row, so a page costs about three
+ * rows read per record, and about five when a second window is asked for.
  */
 export async function listRecords(
   db: D1Database,
   limit: number,
   offset: number,
-  changeSince: string,
+  windows: ChangeWindows,
 ): Promise<{ records: ListedRecordRow[]; total: number }> {
+  const second = windows.since !== null;
   const [page, count] = await db.batch<ListedRecordRow | { n: number }>([
     db
       .prepare(
         `SELECT r.*,
-           r.current_value_minor - COALESCE(
-             (SELECT v.value_minor FROM valuations v
-              WHERE v.record_id = r.id AND v.currency = r.current_currency AND v.valued_at <= ?1
-              ORDER BY v.valued_at DESC, v.id DESC LIMIT 1),
-             (SELECT v.value_minor FROM valuations v
-              WHERE v.record_id = r.id AND v.currency = r.current_currency
-              ORDER BY v.valued_at ASC, v.id ASC LIMIT 1)
-           ) AS change_30d_minor,
+           ${changeSince("?1")} AS change_30d_minor,
+           ${second ? changeSince("?4") : "NULL"} AS change_minor,
            CASE WHEN r.purchase_price_minor IS NOT NULL AND r.purchase_currency = r.current_currency
                 THEN r.current_value_minor - r.purchase_price_minor END AS gain_minor
          FROM records r
          ORDER BY r.artist COLLATE NOCASE, r.year, r.title COLLATE NOCASE
          LIMIT ?2 OFFSET ?3`,
       )
-      .bind(changeSince, limit, offset),
+      .bind(...(second ? [windows.since30, limit, offset, windows.since] : [windows.since30, limit, offset])),
     db.prepare("SELECT COUNT(*) AS n FROM records"),
   ]);
+  const records = (page?.results ?? []) as ListedRecordRow[];
+  if (!second) for (const r of records) r.change_minor = r.change_30d_minor;
   return {
-    records: (page?.results ?? []) as ListedRecordRow[],
+    records,
     total: ((count?.results?.[0] as { n: number } | undefined)?.n) ?? 0,
   };
 }

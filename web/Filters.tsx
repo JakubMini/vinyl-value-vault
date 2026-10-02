@@ -19,17 +19,21 @@ import {
   toggleQuickFilter,
 } from "../src/select";
 import { count, formatMinor } from "./format";
+import { over, type Range, RANGES } from "./range";
 
 interface Props {
   selection: Selection;
   options: FacetOptions;
   currency: string;
+  /** The window the change figures cover. */
+  range: Range;
   onChange: (next: Selection) => void;
+  onRange: (range: Range) => void;
 }
 
-export function Filters({ selection: s, options, currency, onChange }: Props) {
+export function Filters({ selection: s, options, currency, range, onChange, onRange }: Props) {
   const panelId = useId();
-  const chips = activeFilters(s, (major) => formatMinor(Math.round(major * 100), currency));
+  const chips = activeFilters(s, (major) => formatMinor(Math.round(major * 100), currency), over(range));
   const [open, setOpen] = useState(chips.length > 0);
   const set = <K extends keyof Selection>(key: K, value: Selection[K]) => onChange({ ...s, [key]: value });
 
@@ -73,7 +77,17 @@ export function Filters({ selection: s, options, currency, onChange }: Props) {
         <FacetSelect label="Sleeve grade" value={s.sleeve} options={options.sleeve} onChange={(v) => set("sleeve", v as Grade | "")} />
         <FacetSelect label="Spotify" value={s.spotify} options={options.spotify} onChange={(v) => set("spotify", v as Selection["spotify"])} />
         <FacetSelect label="Price paid" value={s.paid} options={options.paid} onChange={(v) => set("paid", v as Selection["paid"])} />
-        <FacetSelect label="Last 30 days" value={s.move} options={options.move} onChange={(v) => set("move", v as Selection["move"])} />
+        <label className="facet">
+          <span>Change measured over</span>
+          <select className="input" value={range.value} onChange={(e) => onRange(RANGES.find((r) => r.value === e.target.value) ?? range)}>
+            {RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <FacetSelect label={`Price ${over(range)}`} value={s.move} options={options.move} onChange={(v) => set("move", v as Selection["move"])} />
         <FacetSelect label="Against what I paid" value={s.gain} options={options.gain} onChange={(v) => set("gain", v as Selection["gain"])} />
         <FacetSelect label="Priced from" value={s.how} options={options.how} onChange={(v) => set("how", v as Selection["how"])} />
         <MoneyRange min={s.min} max={s.max} currency={currency} onChange={(min, max) => onChange({ ...s, min, max })} />

@@ -49,10 +49,12 @@ export interface ApiRecord {
   updated_at: string;
 }
 
-/** A record in the collection list, with two figures worked out by the API. */
+/** A record in the collection list, with three figures worked out by the API. */
 export interface ListedRecord extends ApiRecord {
-  /** Value now minus value 30 days ago (or at its first price, if that was more recent). */
+  /** Value now minus value 30 days ago (or at its first price, if that was more recent). Always 30 days, whatever the page was asked for. */
   change_30d_minor: number | null;
+  /** The same over the window the page was asked for (RecordsPage.change_days). Equal to change_30d_minor by default. */
+  change_minor: number | null;
   /** Value now minus what was paid, when both are in the same currency. */
   gain_minor: number | null;
 }
@@ -139,6 +141,8 @@ export interface RecordsPage {
   total: number;
   limit: number;
   offset: number;
+  /** The window each record's change_minor covers, in days. 30 unless asked otherwise. */
+  change_days: number;
 }
 
 export interface SyncRun {

@@ -231,6 +231,8 @@ export function listedRecord(overrides: Partial<ListedRecord> = {}): ListedRecor
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     change_30d_minor: null,
+    // The window's figure is the 30-day one unless a test says otherwise, as the API does by default.
+    change_minor: overrides.change_30d_minor ?? null,
     gain_minor: null,
     ...overrides,
   };

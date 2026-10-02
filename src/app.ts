@@ -83,7 +83,11 @@ const pageSchema = z.object({
 });
 
 // A personal collection fits in one page, so the dashboard can sort and filter it in the browser.
-const recordsPageSchema = pageSchema.extend({ limit: z.coerce.number().int().min(1).max(1000).default(50) });
+// change_days is the window each record's change covers; 30 is what change_30d_minor has always been.
+const recordsPageSchema = pageSchema.extend({
+  limit: z.coerce.number().int().min(1).max(1000).default(50),
+  change_days: z.coerce.number().int().min(1).max(3650).default(30),
+});
 
 const DAY_MS = 86_400_000;
 
@@ -122,7 +126,7 @@ function presentRecord(row: RecordRow): ApiRecord {
 }
 
 function presentListedRecord(row: ListedRecordRow): ListedRecord {
-  return { ...presentRecord(row), change_30d_minor: row.change_30d_minor, gain_minor: row.gain_minor };
+  return { ...presentRecord(row), change_30d_minor: row.change_30d_minor, change_minor: row.change_minor, gain_minor: row.gain_minor };
 }
 
 function presentSyncRun(run: SyncRunRow): SyncRun {
@@ -192,10 +196,12 @@ app.get("/collection", validate("query", collectionSchema), async (c) => {
 });
 
 app.get("/records", validate("query", recordsPageSchema), async (c) => {
-  const { limit, offset } = c.req.valid("query");
-  const changeSince = new Date(Date.now() - 30 * DAY_MS).toISOString();
-  const { records, total } = await listRecords(c.env.DB, limit, offset, changeSince);
-  return c.json({ records: records.map(presentListedRecord), total, limit, offset } satisfies RecordsPage);
+  const { limit, offset, change_days } = c.req.valid("query");
+  const now = Date.now();
+  const since30 = new Date(now - 30 * DAY_MS).toISOString();
+  const since = change_days === 30 ? null : new Date(now - change_days * DAY_MS).toISOString();
+  const { records, total } = await listRecords(c.env.DB, limit, offset, { since30, since });
+  return c.json({ records: records.map(presentListedRecord), total, limit, offset, change_days } satisfies RecordsPage);
 });
 
 // ?value=false skips the immediate valuation; the cron prices the record later. Bulk imports use it

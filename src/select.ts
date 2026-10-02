@@ -61,7 +61,7 @@ export interface Selection {
   /** Value bounds in major units (pounds), inclusive. A record without a value is left out when either is set. */
   min: number | null;
   max: number | null;
-  /** Which way the price went over the last 30 days. */
+  /** Which way the price went over the window the list was asked for (30 days unless the page chose another). */
   move: Move;
   /** Worth more, or less, than what was paid. */
   gain: GainDir;
@@ -263,7 +263,7 @@ export function matches(r: ListedRecord, s: Selection): boolean {
     if (s.max !== null && v > Math.round(s.max * 100)) return false;
   }
   if (s.move) {
-    const c = r.change_30d_minor;
+    const c = r.change_minor;
     if (c === null) return false;
     if (s.move === "up" ? c <= 0 : s.move === "down" ? c >= 0 : c !== 0) return false;
   }
@@ -293,7 +293,7 @@ const SORTS: Record<SortKey, (r: ListedRecord) => string | number | null> = {
   media: (r) => GRADE_RANK.get(r.media_condition) ?? null,
   sleeve: (r) => GRADE_RANK.get(r.sleeve_condition) ?? null,
   value: (r) => r.current_value_minor,
-  change: (r) => r.change_30d_minor,
+  change: (r) => r.change_minor,
   gain: (r) => r.gain_minor,
   valued: (r) => r.last_valued_at,
   added: (r) => r.discogs_added_at ?? r.created_at,
@@ -439,7 +439,7 @@ export function facetOptions(records: readonly ListedRecord[], s: Selection): Fa
     label: byCount(tally(without("label"), (r) => r.label)),
     spotify: yesNo("spotify", (r) => r.spotify_album_id !== null),
     paid: yesNo("paid", (r) => r.purchase_price_minor !== null),
-    move: inOrder(MOVES, tally(without("move"), (r) => (r.change_30d_minor === null ? null : r.change_30d_minor > 0 ? "up" : r.change_30d_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
+    move: inOrder(MOVES, tally(without("move"), (r) => (r.change_minor === null ? null : r.change_minor > 0 ? "up" : r.change_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
     gain: inOrder(GAIN_DIRS, tally(without("gain"), (r) => (r.gain_minor === null ? null : r.gain_minor > 0 ? "up" : r.gain_minor < 0 ? "down" : null)), (v) => GAIN_LABELS[v as Exclude<GainDir, "">]),
     how: inOrder(HOWS, tally(without("how"), (r) => (r.current_method === "price_suggestion" ? "suggestion" : r.current_method === "lowest_listing" ? "listing" : null)), (v) => HOW_LABELS[v as Exclude<How, "">]),
   };
@@ -450,7 +450,7 @@ export interface Totals {
   /** Records with a value in the asked-for currency; the sums below cover these. */
   priced: number;
   value_minor: number;
-  /** Null until at least one record has a 30-day change. */
+  /** Over the window the list was asked for. Null until at least one record has a change. */
   change_minor: number | null;
   /** Null until at least one record has a price paid in the same currency. */
   gain_minor: number | null;
@@ -465,7 +465,7 @@ export function totals(records: readonly ListedRecord[], currency: string): Tota
     if (r.current_value_minor === null || r.current_currency !== currency) continue;
     t.priced += 1;
     t.value_minor += r.current_value_minor;
-    if (r.change_30d_minor !== null) t.change_minor = (t.change_minor ?? 0) + r.change_30d_minor;
+    if (r.change_minor !== null) t.change_minor = (t.change_minor ?? 0) + r.change_minor;
     if (r.gain_minor !== null) {
       t.gain_minor = (t.gain_minor ?? 0) + r.gain_minor;
       t.paid += 1;
@@ -481,8 +481,8 @@ export interface ActiveFilter {
   next: Selection;
 }
 
-/** The narrow filters in force, as chips: what each says, and the selection without it. */
-export function activeFilters(s: Selection, money: (major: number) => string): ActiveFilter[] {
+/** The narrow filters in force, as chips: what each says, and the selection without it. `over` is how the change window reads: "in 30 days". */
+export function activeFilters(s: Selection, money: (major: number) => string, over = "in 30 days"): ActiveFilter[] {
   const out: ActiveFilter[] = [];
   const add = (key: string, label: string, reset: Partial<Selection>) => out.push({ key, label, next: { ...s, ...reset } });
   if (s.artist) add("artist", s.artist, { artist: "" });
@@ -497,7 +497,7 @@ export function activeFilters(s: Selection, money: (major: number) => string): A
   if (s.min !== null && s.max !== null) add("value", `${money(s.min)} to ${money(s.max)}`, { min: null, max: null });
   else if (s.min !== null) add("value", `From ${money(s.min)}`, { min: null, max: null });
   else if (s.max !== null) add("value", `Up to ${money(s.max)}`, { min: null, max: null });
-  if (s.move) add("move", `${MOVE_LABELS[s.move]} in 30 days`, { move: "" });
+  if (s.move) add("move", `${MOVE_LABELS[s.move]} ${over}`, { move: "" });
   if (s.gain) add("gain", GAIN_LABELS[s.gain], { gain: "" });
   if (s.how) add("how", `Priced from ${s.how === "suggestion" ? "a suggestion" : "a listing"}`, { how: "" });
   if (s.scarce) add("scarce", `${SCARCE_COPIES} or fewer for sale`, { scarce: false });

@@ -47,14 +47,15 @@ async function priced(
 interface Listed {
   id: number;
   change_30d_minor: number | null;
+  change_minor: number | null;
   gain_minor: number | null;
   current_method: string | null;
   current_lowest_listing_minor: number | null;
   current_num_for_sale: number | null;
 }
 
-async function listed(): Promise<Map<number, Listed>> {
-  const body = (await (await api("/records?limit=1000")).json()) as { records: Listed[] };
+async function listed(query = ""): Promise<Map<number, Listed>> {
+  const body = (await (await api(`/records?limit=1000${query ? `&${query}` : ""}`)).json()) as { records: Listed[] };
   return new Map(body.records.map((r) => [r.id, r]));
 }
 
@@ -88,6 +89,28 @@ describe("the collection list", () => {
     const records = await listed();
     expect(records.get(pounds.id)?.gain_minor).toBe(2000);
     expect(records.get(dollars.id)?.gain_minor).toBeNull();
+  });
+
+  it("measures the change over the window asked for, and always over 30 days as well", async () => {
+    const old = await seedRecord({ artist: "A", title: "Priced for months" });
+    await priced(old.id, 2000, daysAgo(40));
+    await priced(old.id, 2500, daysAgo(10));
+    await priced(old.id, 3000, daysAgo(1));
+    const never = await seedRecord({ artist: "B", title: "Never priced" });
+
+    expect((await listed()).get(old.id)).toMatchObject({ change_30d_minor: 1000, change_minor: 1000 });
+    const week = await listed("change_days=7");
+    expect(week.get(old.id)).toMatchObject({ change_30d_minor: 1000, change_minor: 500 });
+    expect(week.get(never.id)).toMatchObject({ change_30d_minor: null, change_minor: null });
+    // Further back than the first price: the first price is the start, as it is for 30 days.
+    expect((await listed("change_days=90")).get(old.id)).toMatchObject({ change_minor: 1000 });
+  });
+
+  it("says which window the page covers, and refuses one it cannot read", async () => {
+    expect(await (await api("/records")).json()).toMatchObject({ change_days: 30 });
+    expect(await (await api("/records?change_days=90")).json()).toMatchObject({ change_days: 90 });
+    expect((await api("/records?change_days=0")).status).toBe(400);
+    expect((await api("/records?change_days=abc")).status).toBe(400);
   });
 
   it("returns a whole collection in one page, up to 1,000 records", async () => {

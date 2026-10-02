@@ -9,11 +9,13 @@ import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { Filters, QuickFilters } from "../Filters";
 import { count, formatMinor } from "../format";
 import { useQueueRevalue, useRecords, useUpdateRecord } from "../queries";
+import { over, readRange, withRange } from "../range";
 import { Totals } from "../Totals";
 
 export function Collection() {
-  const records = useRecords();
   const [params, setParams] = useSearchParams();
+  const range = readRange(params);
+  const records = useRecords(range.days);
   // Ticked records. Only the ones on screen count, so a filter never acts on rows you can't see.
   const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
 
@@ -72,11 +74,18 @@ export function Collection() {
     <section className="stack">
       <div className="row-between">
         <h1>Collection</h1>
-        <Totals shown={rows} all={records.data.length} currency={currency} />
+        <Totals shown={rows} all={records.data.length} currency={currency} over={over(range)} />
       </div>
 
       <QuickFilters selection={selection} onChange={select} />
-      <Filters selection={selection} options={options} currency={currency} onChange={select} />
+      <Filters
+        selection={selection}
+        options={options}
+        currency={currency}
+        range={range}
+        onChange={select}
+        onRange={(next) => setParams((prev) => withRange(prev, next), { replace: true })}
+      />
 
       <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
 
@@ -107,7 +116,7 @@ export function Collection() {
                 {header("media", "Media")}
                 {header("sleeve", "Sleeve", { narrow: false })}
                 {header("value", "Value", { numeric: true })}
-                {header("change", "30 days", { numeric: true, narrow: false })}
+                {header("change", range.label, { numeric: true, narrow: false })}
                 {header("gain", "Gain", { numeric: true, narrow: false })}
                 {header("forsale", "For sale", { numeric: true, narrow: false })}
                 {header("valued", "Priced", { narrow: false })}
@@ -217,7 +226,7 @@ function RecordRow({ record: r, ticked, onToggle }: { record: ListedRecord; tick
         {r.current_value_minor !== null && r.current_currency ? formatMinor(r.current_value_minor, r.current_currency) : <span className="muted">—</span>}
       </td>
       <td className="num hide-narrow">
-        <MoneyChange minor={r.change_30d_minor} currency={r.current_currency} />
+        <MoneyChange minor={r.change_minor} currency={r.current_currency} />
       </td>
       <td className="num hide-narrow">
         <MoneyChange minor={r.gain_minor} currency={r.current_currency} />
