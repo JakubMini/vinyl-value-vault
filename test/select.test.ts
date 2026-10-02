@@ -255,8 +255,8 @@ describe("the narrow filters", () => {
     const s = select({ artist: "Abba", genre: "Pop", decade: "1970s", desc: ["Mono", "Compilation"], min: 5, max: 20, move: "up", q: "keep me", how: "listing", scarce: true });
     const chips = activeFilters(s, (n) => `£${n}`);
     expect(chips.map((c) => c.label)).toEqual(["Abba", "Pop", "1970s", "Mono", "Compilation", "£5 to £20", "Rose in 30 days", "Priced from a listing", "3 or fewer for sale"]);
-    expect(chips[2]!.next.desc).toEqual(["Compilation"]);
-    expect(chips[4]!.next).toMatchObject({ min: null, max: null, q: "keep me" });
+    expect(chips.find((c) => c.label === "Mono")!.next.desc).toEqual(["Compilation"]);
+    expect(chips.find((c) => c.label === "£5 to £20")!.next).toMatchObject({ min: null, max: null, q: "keep me" });
     expect(activeFilters(select({ max: 20 }), (n) => `£${n}`)[0]!.label).toBe("Up to £20");
   });
 
