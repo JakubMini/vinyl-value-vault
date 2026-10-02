@@ -1201,3 +1201,44 @@ a.bar-row:hover .bar-fill {
     display: none;
   }
 }
+
+/* --- Table tools: a columns menu ------------------------------------------------------- */
+
+.menu {
+  position: relative;
+}
+.menu > summary {
+  list-style: none;
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  min-width: 200px;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.menu-option:hover {
+  background: var(--hover);
+}
+.menu-option input {
+  accent-color: var(--accent);
+}

@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
+import { recordsCsv } from "../../src/csv";
 import { GRADES, type Grade } from "../../src/grades";
 import { applySelection, canPrice, facetOptions, isScarce, readSelection, SELECTION_KEYS, type Selection, type SortKey, writeSelection } from "../../src/select";
 import { spotifyAlbumUrl } from "../../src/spotify";
+import { type ColumnKey, COLUMNS, loadColumns, saveColumns } from "../columns";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { Filters, QuickFilters } from "../Filters";
 import { count, formatMinor } from "../format";
@@ -18,6 +20,18 @@ export function Collection() {
   const records = useRecords(range.days);
   // Ticked records. Only the ones on screen count, so a filter never acts on rows you can't see.
   const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
+  const [columns, setColumns] = useState<ReadonlySet<ColumnKey>>(loadColumns);
+  const shownColumns = COLUMNS.filter((c) => columns.has(c.key));
+
+  function chooseColumn(key: ColumnKey, on: boolean) {
+    setColumns((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      saveColumns(next);
+      return next;
+    });
+  }
 
   const selection = useMemo(() => readSelection(params), [params]);
 
@@ -54,10 +68,18 @@ export function Collection() {
     });
   }
 
-  const header = (key: SortKey, label: string, options: { numeric?: boolean; narrow?: boolean } = {}) => {
+  const header = (label: string, options: { sort?: SortKey; numeric?: boolean; narrow?: boolean } = {}) => {
+    const className = [options.numeric ? "num" : "", options.narrow ? "hide-narrow" : ""].filter(Boolean).join(" ") || undefined;
+    if (!options.sort) {
+      return (
+        <th scope="col" className={className}>
+          {label}
+        </th>
+      );
+    }
+    const key = options.sort;
     const active = selection.sort === key;
     const nextDir = active && selection.dir === "asc" ? "desc" : active ? "asc" : options.numeric ? "desc" : "asc";
-    const className = [options.numeric ? "num" : "", options.narrow === false ? "hide-narrow" : ""].filter(Boolean).join(" ") || undefined;
     return (
       <th scope="col" className={className} aria-sort={active ? (selection.dir === "asc" ? "ascending" : "descending") : "none"}>
         <button type="button" className="sort" onClick={() => select({ ...selection, sort: key, dir: nextDir })}>
@@ -69,6 +91,17 @@ export function Collection() {
       </th>
     );
   };
+
+  /** Save whatever is shown, in the order shown, as a spreadsheet. */
+  function exportCsv() {
+    const blob = new Blob(["\uFEFF", recordsCsv(rows)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vinyl-value-vault-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <section className="stack">
@@ -87,7 +120,25 @@ export function Collection() {
         onRange={(next) => setParams((prev) => withRange(prev, next), { replace: true })}
       />
 
-      <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
+      <div className="row-between">
+        <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
+        <div className="actions">
+          <details className="menu">
+            <summary className="button">Columns</summary>
+            <div className="menu-panel">
+              {COLUMNS.map((c) => (
+                <label key={c.key} className="menu-option">
+                  <input type="checkbox" checked={columns.has(c.key)} onChange={(e) => chooseColumn(c.key, e.target.checked)} />
+                  {c.key === "change" ? `Change, ${range.label.toLowerCase()}` : c.label}
+                </label>
+              ))}
+            </div>
+          </details>
+          <button type="button" className="button" disabled={rows.length === 0} onClick={exportCsv}>
+            Export CSV
+          </button>
+        </div>
+      </div>
 
       {rows.length === 0 ? (
         <p className="muted">No records match.</p>
@@ -111,20 +162,15 @@ export function Collection() {
                 <th scope="col" className="cover-col">
                   <span className="sr-only">Cover</span>
                 </th>
-                {header("artist", "Record")}
-                {header("year", "Year", { numeric: true, narrow: false })}
-                {header("media", "Media")}
-                {header("sleeve", "Sleeve", { narrow: false })}
-                {header("value", "Value", { numeric: true })}
-                {header("change", range.label, { numeric: true, narrow: false })}
-                {header("gain", "Gain", { numeric: true, narrow: false })}
-                {header("forsale", "For sale", { numeric: true, narrow: false })}
-                {header("valued", "Priced", { narrow: false })}
+                {header("Record", { sort: "artist" })}
+                {shownColumns.map((c) => (
+                  <Fragment key={c.key}>{header(c.key === "change" ? range.label : c.label, { sort: c.sort, numeric: c.numeric, narrow: c.narrow })}</Fragment>
+                ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <RecordRow key={r.id} record={r} ticked={ticked.has(r.id)} onToggle={() => toggle(r.id)} />
+                <RecordRow key={r.id} record={r} columns={shownColumns.map((c) => c.key)} ticked={ticked.has(r.id)} onToggle={() => toggle(r.id)} />
               ))}
             </tbody>
           </table>
@@ -171,8 +217,64 @@ function RevalueBar({ shown, selected, onClear }: { shown: ListedRecord[]; selec
   );
 }
 
-function RecordRow({ record: r, ticked, onToggle }: { record: ListedRecord; ticked: boolean; onToggle: () => void }) {
+function RecordRow({ record: r, columns, ticked, onToggle }: { record: ListedRecord; columns: ColumnKey[]; ticked: boolean; onToggle: () => void }) {
   const update = useUpdateRecord();
+  const money = (minor: number | null) => (minor !== null && r.current_currency ? formatMinor(minor, r.current_currency) : <span className="muted">—</span>);
+  const dash = <span className="muted">—</span>;
+
+  const cells: Record<ColumnKey, () => ReactNode> = {
+    year: () => r.year ?? dash,
+    label: () => r.label ?? dash,
+    catno: () => r.catalogue_number ?? dash,
+    format: () => r.format ?? dash,
+    media: () => (
+      <GradeSelect
+        label={`Media grade for ${r.title}`}
+        value={r.media_condition}
+        disabled={update.isPending}
+        onChange={(media_condition) => update.mutate({ id: r.id, patch: { media_condition } })}
+      />
+    ),
+    sleeve: () => (
+      <GradeSelect
+        label={`Sleeve grade for ${r.title}`}
+        value={r.sleeve_condition}
+        disabled={update.isPending}
+        onChange={(sleeve_condition) => update.mutate({ id: r.id, patch: { sleeve_condition } })}
+      />
+    ),
+    value: () => money(r.current_value_minor),
+    change: () => <MoneyChange minor={r.change_minor} currency={r.current_currency} />,
+    gain: () => <MoneyChange minor={r.gain_minor} currency={r.current_currency} />,
+    forsale: () =>
+      r.current_num_for_sale !== null ? (
+        <span
+          className={isScarce(r) ? "scarce" : undefined}
+          title={r.current_lowest_listing_minor !== null && r.current_currency ? `Cheapest copy ${formatMinor(r.current_lowest_listing_minor, r.current_currency)}` : undefined}
+        >
+          {count(r.current_num_for_sale)}
+        </span>
+      ) : (
+        dash
+      ),
+    cheapest: () => money(r.current_lowest_listing_minor),
+    valued: () =>
+      r.last_valuation_error ? (
+        <span className="badge badge-warning" title={r.last_valuation_error}>
+          <span aria-hidden="true">!</span>No price
+        </span>
+      ) : r.last_valued_at ? (
+        <When iso={r.last_valued_at} />
+      ) : (
+        <span className="muted">{r.current_value_minor !== null ? "Queued" : "Waiting"}</span>
+      ),
+    added: () => {
+      const when = r.discogs_added_at ?? r.created_at;
+      return when ? <When iso={when} /> : dash;
+    },
+  };
+  const spec = new Map(COLUMNS.map((c) => [c.key, c]));
+
   return (
     <tr className={r.discogs_removed_at ? "gone" : undefined}>
       <td className="check-col">
@@ -205,55 +307,15 @@ function RecordRow({ record: r, ticked, onToggle }: { record: ListedRecord; tick
           {r.format ? ` · ${r.format}` : ""}
         </div>
       </td>
-      <td className="num hide-narrow">{r.year ?? "—"}</td>
-      <td>
-        <GradeSelect
-          label={`Media grade for ${r.title}`}
-          value={r.media_condition}
-          disabled={update.isPending}
-          onChange={(media_condition) => update.mutate({ id: r.id, patch: { media_condition } })}
-        />
-      </td>
-      <td className="hide-narrow">
-        <GradeSelect
-          label={`Sleeve grade for ${r.title}`}
-          value={r.sleeve_condition}
-          disabled={update.isPending}
-          onChange={(sleeve_condition) => update.mutate({ id: r.id, patch: { sleeve_condition } })}
-        />
-      </td>
-      <td className="num strong">
-        {r.current_value_minor !== null && r.current_currency ? formatMinor(r.current_value_minor, r.current_currency) : <span className="muted">—</span>}
-      </td>
-      <td className="num hide-narrow">
-        <MoneyChange minor={r.change_minor} currency={r.current_currency} />
-      </td>
-      <td className="num hide-narrow">
-        <MoneyChange minor={r.gain_minor} currency={r.current_currency} />
-      </td>
-      <td className="num hide-narrow">
-        {r.current_num_for_sale !== null ? (
-          <span
-            className={isScarce(r) ? "scarce" : undefined}
-            title={r.current_lowest_listing_minor !== null && r.current_currency ? `Cheapest copy ${formatMinor(r.current_lowest_listing_minor, r.current_currency)}` : undefined}
-          >
-            {count(r.current_num_for_sale)}
-          </span>
-        ) : (
-          <span className="muted">—</span>
-        )}
-      </td>
-      <td className="hide-narrow">
-        {r.last_valuation_error ? (
-          <span className="badge badge-warning" title={r.last_valuation_error}>
-            <span aria-hidden="true">!</span>No price
-          </span>
-        ) : r.last_valued_at ? (
-          <When iso={r.last_valued_at} />
-        ) : (
-          <span className="muted">{r.current_value_minor !== null ? "Queued" : "Waiting"}</span>
-        )}
-      </td>
+      {columns.map((key) => {
+        const c = spec.get(key)!;
+        const className = [c.numeric ? "num" : "", c.narrow ? "hide-narrow" : "", key === "value" ? "strong" : ""].filter(Boolean).join(" ") || undefined;
+        return (
+          <td key={key} className={className}>
+            {cells[key]()}
+          </td>
+        );
+      })}
     </tr>
   );
 }
