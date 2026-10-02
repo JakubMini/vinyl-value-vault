@@ -35,7 +35,7 @@ describe("the HTTP API", () => {
     });
     expect(created.status).toBe(201);
     const record = (await created.json()) as { id: number; sleeve_condition: string; purchase_currency: string; current_value: null };
-    expect(record).toMatchObject({ artist: "Portishead", title: "Dummy", year: 1994, media_condition: "NM" });
+    expect(record).toMatchObject({ artist: "Portishead", title: "Dummy", year: 1994, media_condition: "NM", genres: [], styles: [] });
     expect(record.sleeve_condition).toBe("VG+");
     expect(record.purchase_currency).toBe("GBP");
     expect(record.current_value).toBeNull();
@@ -44,9 +44,10 @@ describe("the HTTP API", () => {
     expect(list.total).toBe(1);
     expect(list.records[0]?.id).toBe(record.id);
 
-    const patched = await api(`/records/${record.id}`, { method: "PATCH", json: { notes: "Original UK pressing", sleeve_condition: "VG" } });
+    // Genres belong to Discogs: a client sending them is ignored, not refused.
+    const patched = await api(`/records/${record.id}`, { method: "PATCH", json: { notes: "Original UK pressing", sleeve_condition: "VG", genres: ["Trip Hop"] } });
     expect(patched.status).toBe(200);
-    expect(await patched.json()).toMatchObject({ notes: "Original UK pressing", sleeve_condition: "VG" });
+    expect(await patched.json()).toMatchObject({ notes: "Original UK pressing", sleeve_condition: "VG", genres: [] });
 
     const one = (await (await api(`/records/${record.id}`)).json()) as { valuations: unknown[] };
     expect(one.valuations).toEqual([]);

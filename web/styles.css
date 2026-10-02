@@ -1041,6 +1041,15 @@ th[aria-sort="descending"] {
   font-size: 15px;
   line-height: 1;
 }
+a.chip {
+  text-decoration: none;
+}
+.chip-quiet {
+  color: var(--ink-2);
+}
+.record-head .chips {
+  margin-top: 8px;
+}
 .link-button {
   font: inherit;
   font-size: 13px;

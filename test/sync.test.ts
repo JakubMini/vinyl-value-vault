@@ -28,6 +28,8 @@ interface Row {
   discogs_instance_id: number;
   artist: string;
   title: string;
+  genres: string | null;
+  styles: string | null;
   media_condition: string;
   sleeve_condition: string;
   notes: string | null;
@@ -100,6 +102,22 @@ describe("syncing the Discogs collection", () => {
 
     const after = await env.DB.prepare("SELECT title, cover_image_url, media_condition, notes, purchase_price_minor FROM records").first();
     expect(after).toEqual({ title: "Dummy (Remastered)", cover_image_url: "https://i.discogs.com/new.jpg", media_condition: "NM", notes: "Cleaned", purchase_price_minor: 1500 });
+  });
+
+  it("fills in genres and styles when Discogs starts describing a record, and leaves it alone after", async () => {
+    mockCollection([collectionItem(1)]);
+    await sync();
+    expect((await rows())[0]).toMatchObject({ genres: null, styles: null });
+
+    mockCollection([collectionItem(1, { genres: ["Rock", "Pop"], styles: ["Indie Rock"] })]);
+    expect(await sync()).toMatchObject({ updated: 1, unchanged: 0 });
+    expect((await rows())[0]).toMatchObject({ genres: '["Rock","Pop"]', styles: '["Indie Rock"]' });
+
+    mockCollection([collectionItem(1, { genres: ["Rock", "Pop"], styles: ["Indie Rock"] })]);
+    expect(await sync()).toMatchObject({ updated: 0, unchanged: 1 });
+
+    const listed = (await (await api("/records")).json()) as { records: { genres: string[]; styles: string[] }[] };
+    expect(listed.records[0]).toMatchObject({ genres: ["Rock", "Pop"], styles: ["Indie Rock"] });
   });
 
   it("ignores Discogs' spacer image when a release has no artwork", async () => {

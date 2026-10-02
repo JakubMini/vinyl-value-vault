@@ -8,15 +8,20 @@ import type { ListedRecord } from "./api-types";
 import { GRADES } from "./grades";
 import { decadeOf, FORMAT_KINDS, isScarce, parseFormat, SCARCE_COPIES, type Selection } from "./select";
 
-export type BreakdownKey = "decade" | "kind" | "grade" | "label" | "artist";
+export type BreakdownKey = "decade" | "kind" | "grade" | "genre" | "style" | "label" | "artist";
 
 export const BREAKDOWNS: readonly { key: BreakdownKey; label: string }[] = [
   { key: "decade", label: "Decade" },
   { key: "kind", label: "Format" },
   { key: "grade", label: "Grade" },
+  { key: "genre", label: "Genre" },
+  { key: "style", label: "Style" },
   { key: "label", label: "Label" },
   { key: "artist", label: "Artist" },
 ];
+
+/** Cuts where one record can fall into several slices, so the shares can add up to more than one. */
+export const OVERLAPPING: readonly BreakdownKey[] = ["genre", "style"];
 
 export interface Slice {
   key: string;
@@ -33,7 +38,8 @@ export interface Slice {
 }
 
 interface Grouping {
-  of: (r: ListedRecord, format: ReturnType<typeof parseFormat>) => string;
+  /** The slice a record belongs to, or every slice it belongs to. */
+  of: (r: ListedRecord, format: ReturnType<typeof parseFormat>) => string | readonly string[];
   label: (key: string) => string;
   selection: (key: string) => Partial<Selection> | null;
   /** Fixed order for a small, known set; otherwise by value. */
@@ -42,6 +48,8 @@ interface Grouping {
 
 const UNKNOWN_YEAR = "Unknown year";
 const NO_LABEL = "No label";
+const NO_GENRE = "No genre";
+const NO_STYLE = "No style";
 
 const GROUPINGS: Record<BreakdownKey, Grouping> = {
   decade: {
@@ -60,6 +68,16 @@ const GROUPINGS: Record<BreakdownKey, Grouping> = {
     label: (k) => k,
     selection: (k) => ({ grade: k as Selection["grade"] }),
     order: GRADES,
+  },
+  genre: {
+    of: (r) => (r.genres.length > 0 ? r.genres : NO_GENRE),
+    label: (k) => k,
+    selection: (k) => (k === NO_GENRE ? null : { genre: k }),
+  },
+  style: {
+    of: (r) => (r.styles.length > 0 ? r.styles : NO_STYLE),
+    label: (k) => k,
+    selection: (k) => (k === NO_STYLE ? null : { style: k }),
   },
   label: {
     of: (r) => r.label ?? NO_LABEL,
@@ -87,25 +105,32 @@ function add(s: Slice, r: ListedRecord, currency: string): void {
   }
 }
 
-function withShares(slices: Slice[]): Slice[] {
-  const total = slices.reduce((sum, s) => sum + s.value_minor, 0);
+/** The value of every priced record in `currency`: what a share is a share of. */
+function pricedTotal(records: readonly ListedRecord[], currency: string): number {
+  return records.reduce((sum, r) => sum + (r.current_value_minor !== null && r.current_currency === currency ? r.current_value_minor : 0), 0);
+}
+
+function withShares(slices: Slice[], total: number): Slice[] {
   for (const s of slices) s.share = total > 0 ? s.value_minor / total : 0;
   return slices;
 }
 
 /**
  * The collection cut by one key. A known small set (decades, formats, grades) comes in its
- * natural order; an open set (labels, artists) comes by value, the top `limit` and the rest
- * folded into "Others".
+ * natural order; an open set (genres, styles, labels, artists) comes by value, the top `limit`
+ * and the rest folded into "Others". Shares are of the whole priced collection, so where a
+ * record can sit in several slices (its genres) they can add up to more than one.
  */
 export function breakdown(records: readonly ListedRecord[], by: BreakdownKey, currency: string, limit = 12): Slice[] {
   const g = GROUPINGS[by];
   const slices = new Map<string, Slice>();
   for (const r of records) {
-    const key = g.of(r, parseFormat(r.format));
-    let s = slices.get(key);
-    if (!s) slices.set(key, (s = slice(key, g.label(key), g.selection(key))));
-    add(s, r, currency);
+    const keys = g.of(r, parseFormat(r.format));
+    for (const key of typeof keys === "string" ? [keys] : keys) {
+      let s = slices.get(key);
+      if (!s) slices.set(key, (s = slice(key, g.label(key), g.selection(key))));
+      add(s, r, currency);
+    }
   }
 
   let ordered: Slice[];
@@ -127,7 +152,7 @@ export function breakdown(records: readonly ListedRecord[], by: BreakdownKey, cu
     }
     ordered = [...kept, tail];
   }
-  return withShares(ordered);
+  return withShares(ordered, pricedTotal(records, currency));
 }
 
 /** Band edges in minor units; the last band is open-ended. */
@@ -150,7 +175,7 @@ export function valueBands(records: readonly ListedRecord[], currency: string): 
     if (i < 0) i = 0;
     add(slices[i]!, r, currency);
   }
-  return withShares(slices);
+  return withShares(slices, pricedTotal(records, currency));
 }
 
 export interface Concentration {

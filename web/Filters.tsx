@@ -73,6 +73,8 @@ export function Filters({ selection: s, options, currency, range, onChange, onRa
         <FacetSelect label="Decade" value={s.decade} options={options.decade} onChange={(v) => set("decade", v)} />
         <FacetSelect label="Format" value={s.kind} options={options.kind} onChange={(v) => set("kind", v as Selection["kind"])} />
         <FacetSelect label="Discs" value={s.discs} options={options.discs} onChange={(v) => set("discs", v as Selection["discs"])} />
+        <FacetSelect label="Genre" value={s.genre} options={options.genre} onChange={(v) => set("genre", v)} />
+        <FacetSelect label="Style" value={s.style} options={options.style} onChange={(v) => set("style", v)} />
         <FacetSelect label="Label" value={s.label} options={options.label} onChange={(v) => set("label", v)} />
         <FacetSelect label="Sleeve grade" value={s.sleeve} options={options.sleeve} onChange={(v) => set("sleeve", v as Grade | "")} />
         <FacetSelect label="Spotify" value={s.spotify} options={options.spotify} onChange={(v) => set("spotify", v as Selection["spotify"])} />

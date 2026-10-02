@@ -73,7 +73,7 @@ describe("a selection in the URL", () => {
   });
 
   it("round-trips the narrow filters, descriptors repeated", () => {
-    const s = select({ decade: "1970s", kind: "LP", discs: "2", desc: ["Compilation", "Mono"], label: "CBS", artist: "Abba", sleeve: "VG", spotify: "no", paid: "yes", min: 5, max: 20.5, move: "up", gain: "down", how: "listing", scarce: true });
+    const s = select({ decade: "1970s", kind: "LP", discs: "2", desc: ["Compilation", "Mono"], label: "CBS", artist: "Abba", genre: "Pop", style: "Europop", sleeve: "VG", spotify: "no", paid: "yes", min: 5, max: 20.5, move: "up", gain: "down", how: "listing", scarce: true });
     const written = writeSelection(s);
     expect(written.filter(([k]) => k === "desc")).toEqual([
       ["desc", "Compilation"],
@@ -165,9 +165,9 @@ describe("sorting", () => {
 
 describe("the narrow filters", () => {
   const rows = [
-    listedRecord({ id: 1, artist: "Abba", label: "Polar", year: 1976, format: "LP, Album, Stereo", sleeve_condition: "NM", spotify_album_id: "x", purchase_price_minor: 500, purchase_currency: "GBP", current_value_minor: 1200, current_currency: "GBP", change_30d_minor: 100, gain_minor: 700, current_method: "price_suggestion", current_num_for_sale: 12 }),
-    listedRecord({ id: 2, artist: "Abba", label: "Polar", year: 1979, format: "2xLP, Compilation, Mono", sleeve_condition: "VG", current_value_minor: 3000, current_currency: "GBP", change_30d_minor: -50, gain_minor: null, current_method: "lowest_listing", current_num_for_sale: 40 }),
-    listedRecord({ id: 3, artist: "Beatles", label: "Parlophone", year: 1965, format: '7", Single, Mono', sleeve_condition: "VG+", current_value_minor: 800, current_currency: "GBP", change_30d_minor: 0, purchase_price_minor: 1000, purchase_currency: "GBP", gain_minor: -200, current_method: "lowest_listing", current_num_for_sale: 2 }),
+    listedRecord({ id: 1, artist: "Abba", label: "Polar", year: 1976, format: "LP, Album, Stereo", sleeve_condition: "NM", spotify_album_id: "x", purchase_price_minor: 500, purchase_currency: "GBP", current_value_minor: 1200, current_currency: "GBP", change_30d_minor: 100, gain_minor: 700, current_method: "price_suggestion", current_num_for_sale: 12, genres: ["Pop"], styles: ["Europop", "Disco"] }),
+    listedRecord({ id: 2, artist: "Abba", label: "Polar", year: 1979, format: "2xLP, Compilation, Mono", sleeve_condition: "VG", current_value_minor: 3000, current_currency: "GBP", change_30d_minor: -50, gain_minor: null, current_method: "lowest_listing", current_num_for_sale: 40, genres: ["Pop", "Rock"], styles: ["Europop"] }),
+    listedRecord({ id: 3, artist: "Beatles", label: "Parlophone", year: 1965, format: '7", Single, Mono', sleeve_condition: "VG+", current_value_minor: 800, current_currency: "GBP", change_30d_minor: 0, purchase_price_minor: 1000, purchase_currency: "GBP", gain_minor: -200, current_method: "lowest_listing", current_num_for_sale: 2, genres: ["Rock"], styles: ["Beat"] }),
     listedRecord({ id: 4, artist: "Zappa", label: null, year: null, format: null, sleeve_condition: "VG+" }),
   ];
   const ids = (changes: Partial<Selection>) => rows.filter((r) => matches(r, select(changes))).map((r) => r.id);
@@ -198,6 +198,9 @@ describe("the narrow filters", () => {
     [{ how: "suggestion" }, [1]],
     [{ how: "listing" }, [2, 3]],
     [{ scarce: true }, [3]],
+    [{ genre: "Rock" }, [2, 3]],
+    [{ genre: "Pop", style: "Disco" }, [1]],
+    [{ style: "Europop" }, [1, 2]],
   ] as [Partial<Selection>, number[]][])("%j", (changes, expected) => {
     expect(ids(changes)).toEqual(expected);
   });
@@ -230,6 +233,11 @@ describe("the narrow filters", () => {
       { value: "suggestion", label: "Discogs' suggestion", count: 1 },
       { value: "listing", label: "Cheapest copy for sale", count: 1 },
     ]);
+    expect(o.genre).toEqual([
+      { value: "Pop", label: "Pop", count: 2 },
+      { value: "Rock", label: "Rock", count: 1 },
+    ]);
+    expect(o.style.map((x) => `${x.value}:${x.count}`)).toEqual(["Europop:2", "Disco:1"]);
   });
 
   it("stacks descriptors: counts are over the records already shown, most common first", () => {
@@ -244,9 +252,9 @@ describe("the narrow filters", () => {
   });
 
   it("describes the filters in force, each with a way out", () => {
-    const s = select({ artist: "Abba", decade: "1970s", desc: ["Mono", "Compilation"], min: 5, max: 20, move: "up", q: "keep me", how: "listing", scarce: true });
+    const s = select({ artist: "Abba", genre: "Pop", decade: "1970s", desc: ["Mono", "Compilation"], min: 5, max: 20, move: "up", q: "keep me", how: "listing", scarce: true });
     const chips = activeFilters(s, (n) => `£${n}`);
-    expect(chips.map((c) => c.label)).toEqual(["Abba", "1970s", "Mono", "Compilation", "£5 to £20", "Rose in 30 days", "Priced from a listing", "3 or fewer for sale"]);
+    expect(chips.map((c) => c.label)).toEqual(["Abba", "Pop", "1970s", "Mono", "Compilation", "£5 to £20", "Rose in 30 days", "Priced from a listing", "3 or fewer for sale"]);
     expect(chips[2]!.next.desc).toEqual(["Compilation"]);
     expect(chips[4]!.next).toMatchObject({ min: null, max: null, q: "keep me" });
     expect(activeFilters(select({ max: 20 }), (n) => `£${n}`)[0]!.label).toBe("Up to £20");

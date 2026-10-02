@@ -12,8 +12,8 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes up to 15 records whose price is more than a day old and asks Discogs what they are worth today, by way of my laptop. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over a week, 30 days, 90 days, a year or all time, the records that have risen or fallen most over the same window, and the gain on what I paid. It lists the whole collection in a table that sorts and searches, and narrows by status, grade, decade, format, number of discs, pressing (compilation, reissue, mono...), label, sleeve, value, Spotify and price paid, with quick views such as most valuable, biggest risers and needs a price. A "For sale" column shows how many copies are on Discogs, with a quick view for the scarce ones (three or fewer). Whatever is shown is added up: what it is worth, how that moved over the chosen window, the gain on what was paid. Every filter is in the URL, so a view can be bookmarked. I can grade each record in place, re-price the records I tick (or all of them: "revalue every 1970s LP" is a filter, a tick and a button), and run or preview a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
-- **Shows where the value is.** An Insights page cuts the collection by decade, format, grade, label or artist, by value or by count, as bars that each lead to the table narrowed to what they count. It shows how the values are spread across price bands, how much of the total the ten most valuable records hold, what a typical record is worth, how many prices rose and fell in 30 days, how many were priced from a suggestion rather than a listing, how many copies are for sale across the collection, and how the collection grew, counted from the day each record joined on Discogs. All of it comes from the same list the table already loads, so it costs no extra reads.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over a week, 30 days, 90 days, a year or all time, the records that have risen or fallen most over the same window, and the gain on what I paid. It lists the whole collection in a table that sorts and searches, and narrows by status, grade, decade, format, number of discs, pressing (compilation, reissue, mono...), genre, style, label, sleeve, value, Spotify and price paid, with quick views such as most valuable, biggest risers and needs a price. A "For sale" column shows how many copies are on Discogs, with a quick view for the scarce ones (three or fewer). Whatever is shown is added up: what it is worth, how that moved over the chosen window, the gain on what was paid. Every filter is in the URL, so a view can be bookmarked. I can grade each record in place, re-price the records I tick (or all of them: "revalue every 1970s LP" is a filter, a tick and a button), and run or preview a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
+- **Shows where the value is.** An Insights page cuts the collection by decade, format, grade, genre, style, label or artist, by value or by count, as bars that each lead to the table narrowed to what they count. It shows how the values are spread across price bands, how much of the total the ten most valuable records hold, what a typical record is worth, how many prices rose and fell in 30 days, how many were priced from a suggestion rather than a listing, how many copies are for sale across the collection, and how the collection grew, counted from the day each record joined on Discogs. All of it comes from the same list the table already loads, so it costs no extra reads.
 - **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -62,7 +62,7 @@ Re-pricing on request works through the same queue. Ticking records in the colle
 
 My records are catalogued on Discogs, so that is where the collection lives. The vault syncs with it rather than asking me to enter anything twice.
 
-The rule that keeps this simple is who owns what. **Discogs owns what a pressing is**: artist, title, label, year, format, cover art. **The vault owns what I say about my copy**: its grades, notes and what I paid. A sync adds new items, taking whatever grades Discogs has for them, and refreshes the Discogs-owned details of items already here. It never overwrites a grade or a note set in the vault.
+The rule that keeps this simple is who owns what. **Discogs owns what a pressing is**: artist, title, label, year, format, genres and styles, cover art. **The vault owns what I say about my copy**: its grades, notes and what I paid. A sync adds new items, taking whatever grades Discogs has for them, and refreshes the Discogs-owned details of items already here. It never overwrites a grade or a note set in the vault.
 
 - **Removals are flagged, not deleted.** A record that has left the collection keeps its price history but drops out of the total and the valuation queue. If it comes back, the flag clears.
 - **Deleting is deliberate.** A record deleted from the vault is remembered, so the next sync does not bring it back.
@@ -167,7 +167,7 @@ Six tables. Money is stored as integers in minor units (pence) so there is no fl
 
 | Table | One row per | Notes |
 | --- | --- | --- |
-| `records` | record in the collection | Carries the current value and when it was last looked at, and with it how that value was found (a suggestion or the cheapest listing), the cheapest copy for sale and how many were for sale, all rolled up from the latest valuation so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs, a flag for records that have left the Discogs collection, and the Spotify album a record is pinned to. |
+| `records` | record in the collection | Carries the current value and when it was last looked at, and with it how that value was found (a suggestion or the cheapest listing), the cheapest copy for sale and how many were for sale, all rolled up from the latest valuation so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs, Discogs' genres and styles as JSON text (Discogs-owned, refreshed by every sync, read back as lists), a flag for records that have left the Discogs collection, and the Spotify album a record is pinned to. |
 | `valuations` | price fetched for a record | Append-only history, with the method used, the grade the price was for, and the raw Discogs payload for re-deriving later (a regrade does exactly that). |
 | `collection_snapshots` | valuation run that changed something | The collection total after every run, roughly one a minute while prices are being refreshed. |
 | `collection_daily` | day | The last total of each day, kept current by the job. What the chart reads. |
@@ -215,6 +215,8 @@ curl -s -X POST http://localhost:8787/api/records \
   "catalogue_number": "DGC 24425",
   "year": 1991,
   "format": "LP, Album",
+  "genres": ["Rock"],
+  "styles": ["Grunge", "Alternative Rock"],
   "media_condition": "VG+",
   "sleeve_condition": "VG",
   "purchase_price_minor": 1800,
@@ -271,7 +273,7 @@ npm run check      # regenerate binding types, typecheck, run the tests
 
 ## Syncing the Discogs collection
 
-The cron does this once a day on its own. To sync now, or to preview first, use the dashboard's Sync page. From a script, the request has to get through Access first, so it also carries a service token:
+The cron does this once a day on its own. To sync now, or to preview first, use the dashboard's Sync page. A sync also fills in anything new the vault has learned to keep: when genres and styles arrived, the first sync after the deploy refreshed every record once, and the log showed them all as updated. From a script, the request has to get through Access first, so it also carries a service token:
 
 ```bash
 curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs?dry_run=true" \
@@ -354,7 +356,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Market signals: copies for sale, the cheapest listing and how each price was found, on the record page and in the table
 - [x] Dashboard: an Insights page: where the value sits by decade, format, grade, label and artist; the spread of values; how the collection has grown
 - [x] Price change over a chosen window (a week, a month, a quarter, a year, all time), for the dashboard and the Alexa skill
-- [ ] Genres and styles from Discogs, for filters and charts
+- [x] Genres and styles from Discogs, for filters and charts
 - [ ] Record page: the cheapest listing beside the value, where the record ranks in the collection, more by the same artist or label
 - [ ] Table tools: choose the columns, export the view as CSV
 - [ ] A cover wall: the collection as album art

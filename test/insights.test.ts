@@ -48,6 +48,21 @@ describe("where the value is", () => {
     expect(breakdown(rows, "label", "GBP").find((s) => s.label === "No label")?.selection).toBeNull();
   });
 
+  it("counts a record in every genre it carries, with shares of the whole", () => {
+    const tagged = [
+      gbp(1, 1000, { genres: ["Rock", "Pop"], styles: ["Indie Rock"] }),
+      gbp(2, 3000, { genres: ["Rock"], styles: [] }),
+      gbp(3, 1000, { genres: [], styles: [] }),
+    ];
+    const byGenre = breakdown(tagged, "genre", "GBP");
+    expect(byGenre.map((s) => [s.key, s.count, s.value_minor, s.share, s.selection])).toEqual([
+      ["Rock", 2, 4000, 0.8, { genre: "Rock" }],
+      ["Pop", 1, 1000, 0.2, { genre: "Pop" }],
+      ["No genre", 1, 1000, 0.2, null],
+    ]);
+    expect(breakdown(tagged, "style", "GBP").map((s) => s.key)).toEqual(["No style", "Indie Rock"]);
+  });
+
   it("does not fold a tail of one", () => {
     expect(breakdown(rows, "artist", "GBP", 2).map((s) => s.key)).toEqual(["Abba", "Zappa", "Beatles"]);
   });
