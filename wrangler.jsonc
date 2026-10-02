@@ -35,7 +35,8 @@
   ],
 
   // The valuation job. Every minute it prices up to VALUATION_BATCH_SIZE records
-  // that are due, longest-waiting first.
+  // that are due, longest-waiting first. Once a day the tick syncs the Discogs
+  // collection instead (src/sync.ts), so the two never share one invocation.
   "triggers": {
     "crons": ["* * * * *"]
   }

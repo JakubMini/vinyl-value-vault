@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import worker from "../src/index";
 import { runValuationBatch } from "../src/valuation";
-import { api, expectAllMocksUsed, mockRelease, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
+import { api, expectAllMocksUsed, markSyncedRecently, mockRelease, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
 
 const NEVERMIND = 249504;
 const DUMMY = 2371512;
@@ -110,7 +110,9 @@ describe("the scheduled valuation job", () => {
     expect(first.snapshot).toMatchObject({ currency: "GBP", total_minor: 2200, record_count: 3, valued_count: 1, taken_at: "2026-10-02T06:00:00.000Z" });
 
     // The real scheduled handler: Nevermind was last priced over a day ago so it is due;
-    // Dummy was priced this morning so it is left alone.
+    // Dummy was priced this morning so it is left alone. The collection was synced recently,
+    // so this tick prices records rather than syncing.
+    await markSyncedRecently();
     mockStats(NEVERMIND, { lowest_price: gbp(18.5), num_for_sale: 42, blocked_from_sale: false });
     mockSuggestions(NEVERMIND, { "Very Good Plus (VG+)": gbp(25) });
 

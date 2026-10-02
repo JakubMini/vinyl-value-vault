@@ -1,17 +1,25 @@
 /**
- * A small client for the three Discogs endpoints this service uses.
+ * A small client for the Discogs endpoints this service uses.
  *
  * - GET /releases/{id}                        the pressing's details, to fill in a record from its id
  * - GET /marketplace/stats/{id}               cheapest copy for sale and how many are listed (no login needed)
  * - GET /marketplace/price_suggestions/{id}   suggested price per condition (needs a token and seller settings)
+ * - GET /oauth/identity                       whose token this is (needs a token)
+ * - GET /users/{name}/collection/fields       which collection fields hold the grades and notes
+ * - GET /users/{name}/collection/folders/0/releases   the collection, a page at a time
  *
  * Discogs allows 60 requests a minute with a token, 25 without, and asks for a
  * descriptive User-Agent. The client reads the rate-limit headers so the caller
  * can stop before hitting the ceiling.
  */
-import type { Release } from "./release";
+import type { CollectionItem, Release } from "./release";
 
-export type { Release } from "./release";
+export type { CollectionItem, Release } from "./release";
+
+export interface CollectionPage {
+  pagination: { page: number; pages: number; items: number };
+  releases: CollectionItem[];
+}
 
 export interface DiscogsPrice {
   currency: string;
@@ -70,6 +78,32 @@ export class DiscogsClient {
   async getPriceSuggestions(releaseId: number): Promise<PriceSuggestions | null> {
     if (!this.hasToken) return null;
     return this.get<PriceSuggestions>(`/marketplace/price_suggestions/${releaseId}`, undefined, [401, 403, 404]);
+  }
+
+  /** The Discogs user the token belongs to. Throws DiscogsError(401) on a bad token. */
+  async getIdentity(): Promise<{ username: string }> {
+    return this.getOrThrow("/oauth/identity");
+  }
+
+  async getCollectionFields(username: string): Promise<{ fields: { id: number; name: string }[] }> {
+    return this.getOrThrow(`/users/${encodeURIComponent(username)}/collection/fields`);
+  }
+
+  /** One page of the whole collection (folder 0), oldest additions first, so pages stay stable as it grows. */
+  async getCollectionPage(username: string, page: number, perPage = 100): Promise<CollectionPage> {
+    return this.getOrThrow(`/users/${encodeURIComponent(username)}/collection/folders/0/releases`, {
+      per_page: String(perPage),
+      page: String(page),
+      sort: "added",
+      sort_order: "asc",
+    });
+  }
+
+  /** For endpoints where every non-OK answer is an error. */
+  private async getOrThrow<T>(path: string, query?: Record<string, string>): Promise<T> {
+    const value = await this.get<T>(path, query, []);
+    if (value === null) throw new DiscogsError(502, `Discogs returned an empty body for ${path}`);
+    return value;
   }
 
   private async get<T>(path: string, query: Record<string, string> | undefined, nullOn: number[]): Promise<T | null> {

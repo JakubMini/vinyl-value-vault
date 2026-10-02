@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { type CollectionItem, collectionItemToRecord, isVinyl } from "../src/release";
+import { type CollectionItem, collectionFieldIds, collectionItemToRecord, isVinyl } from "../src/release";
 import { api, resetDatabase } from "./helpers";
 import { network } from "./network";
 
@@ -40,6 +40,7 @@ describe("mapping a Discogs collection item", () => {
       catalogue_number: "ASD 143440 1",
       year: 1983,
       format: "LP, Stereo",
+      discogs_added_at: "2026-10-02T10:26:16.000Z",
     });
   });
 
@@ -57,6 +58,15 @@ describe("mapping a Discogs collection item", () => {
     expect(record.notes).toBe("Sleeve: Generic");
   });
 
+  it("finds the condition and notes fields by name, whatever their case", () => {
+    expect(collectionFieldIds([{ id: 7, name: "Notes" }, { id: 5, name: "Media Condition" }, { id: 6, name: "sleeve condition" }])).toEqual({
+      media: 5,
+      sleeve: 6,
+      notes: 7,
+    });
+    expect(collectionFieldIds([])).toEqual({ media: undefined, sleeve: undefined, notes: undefined });
+  });
+
   it("counts a box set as vinyl only when it contains vinyl", () => {
     const box = (formats: { name: string }[]) => item({ basic_information: { ...item().basic_information, formats } });
     expect(isVinyl(box([{ name: "Box Set" }, { name: "Vinyl" }]))).toBe(true);
@@ -64,7 +74,7 @@ describe("mapping a Discogs collection item", () => {
   });
 });
 
-describe("importing through the API", () => {
+describe("adding a collection item through the API", () => {
   beforeEach(resetDatabase);
 
   it("creates a record without calling Discogs when asked to value it later", async () => {

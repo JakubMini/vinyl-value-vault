@@ -1,5 +1,6 @@
-/** Thin, typed access to the three D1 tables. SQL lives here and nowhere else. */
+/** Thin, typed access to the D1 tables. SQL lives here and nowhere else. */
 import type { Grade } from "./grades";
+import type { ImportedRecord } from "./release";
 
 export interface RecordRow {
   id: number;
@@ -22,6 +23,10 @@ export interface RecordRow {
   current_currency: string | null;
   last_valued_at: string | null;
   last_valuation_error: string | null;
+  cover_image_url: string | null;
+  thumb_url: string | null;
+  discogs_added_at: string | null;
+  discogs_removed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -137,9 +142,18 @@ export async function updateRecord(db: D1Database, id: number, patch: RecordPatc
     .first<RecordRow>();
 }
 
-export async function deleteRecord(db: D1Database, id: number): Promise<boolean> {
-  const result = await db.prepare("DELETE FROM records WHERE id = ?").bind(id).run();
-  return result.meta.changes > 0;
+/** Delete a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. */
+export async function deleteRecord(db: D1Database, id: number, now: string): Promise<boolean> {
+  const [, deleted] = await db.batch([
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO sync_ignored (discogs_instance_id, ignored_at)
+         SELECT discogs_instance_id, ? FROM records WHERE id = ? AND discogs_instance_id IS NOT NULL`,
+      )
+      .bind(now, id),
+    db.prepare("DELETE FROM records WHERE id = ?").bind(id),
+  ]);
+  return (deleted?.meta.changes ?? 0) > 0;
 }
 
 /**
@@ -152,6 +166,7 @@ export async function staleRecords(db: D1Database, limit: number, dueBefore: str
     .prepare(
       `SELECT * FROM records
        WHERE discogs_release_id IS NOT NULL
+         AND discogs_removed_at IS NULL
          AND (last_valued_at IS NULL OR last_valued_at < ?)
        ORDER BY last_valued_at IS NOT NULL, last_valued_at ASC, id ASC
        LIMIT ?`,
@@ -214,7 +229,8 @@ export async function collectionSummary(db: D1Database): Promise<CollectionSumma
               COUNT(current_value_minor) AS valued_count,
               COALESCE(SUM(current_value_minor), 0) AS total_minor,
               MAX(last_valued_at) AS last_valued_at
-       FROM records`,
+       FROM records
+       WHERE discogs_removed_at IS NULL`,
     )
     .first<CollectionSummary>();
   return row ?? { record_count: 0, valued_count: 0, total_minor: 0, last_valued_at: null };
@@ -239,4 +255,190 @@ export async function listSnapshots(db: D1Database, limit: number): Promise<Snap
     .bind(limit)
     .all<SnapshotRow>();
   return results;
+}
+
+// --- Discogs collection sync ---------------------------------------------------------------
+
+/** What Discogs owns about a record. A sync refreshes these and never touches anything else. */
+export const DISCOGS_OWNED_COLUMNS = [
+  "artist",
+  "title",
+  "label",
+  "catalogue_number",
+  "year",
+  "country",
+  "format",
+  "cover_image_url",
+  "thumb_url",
+  "discogs_added_at",
+] as const;
+
+/** A record that came from the Discogs collection, as much of it as a sync compares. */
+export type LinkedRecord = Pick<RecordRow, "id" | "discogs_removed_at" | (typeof DISCOGS_OWNED_COLUMNS)[number]> & {
+  discogs_instance_id: number;
+};
+
+/** Everything a sync needs to know up front, in one round trip. */
+export async function loadSyncState(db: D1Database): Promise<{ linked: LinkedRecord[]; ignored: Set<number> }> {
+  const [linked, ignored] = await db.batch<LinkedRecord | { discogs_instance_id: number }>([
+    db.prepare(
+      `SELECT id, discogs_instance_id, discogs_removed_at, ${DISCOGS_OWNED_COLUMNS.join(", ")}
+       FROM records WHERE discogs_instance_id IS NOT NULL`,
+    ),
+    db.prepare("SELECT discogs_instance_id FROM sync_ignored"),
+  ]);
+  return {
+    linked: (linked?.results ?? []) as LinkedRecord[],
+    ignored: new Set((ignored?.results ?? []).map((r) => r.discogs_instance_id)),
+  };
+}
+
+/**
+ * Write one page of a sync: insert the new items, refresh the changed ones. Each statement
+ * takes the whole page as a single JSON parameter, so a page of 100 costs two queries, not 200.
+ * Plain INSERT rather than an upsert: a conflicting upsert still burns an AUTOINCREMENT id.
+ */
+export async function writeCollectionPage(
+  db: D1Database,
+  fresh: ImportedRecord[],
+  changed: ImportedRecord[],
+  now: string,
+): Promise<{ inserted: number; updated: number }> {
+  const statements: D1PreparedStatement[] = [];
+  if (fresh.length > 0) {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO records (discogs_release_id, discogs_instance_id, ${DISCOGS_OWNED_COLUMNS.join(", ")},
+                               media_condition, sleeve_condition, notes, created_at, updated_at)
+           SELECT j.value ->> '$.discogs_release_id', j.value ->> '$.discogs_instance_id',
+                  ${DISCOGS_OWNED_COLUMNS.map((c) => `j.value ->> '$.${c}'`).join(", ")},
+                  COALESCE(j.value ->> '$.media_condition', 'VG+'), COALESCE(j.value ->> '$.sleeve_condition', 'VG+'),
+                  j.value ->> '$.notes', ?1, ?1
+           FROM json_each(?2) AS j
+           WHERE NOT EXISTS (SELECT 1 FROM records r WHERE r.discogs_instance_id = j.value ->> '$.discogs_instance_id')`,
+        )
+        .bind(now, JSON.stringify(fresh)),
+    );
+  }
+  if (changed.length > 0) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE records
+           SET ${DISCOGS_OWNED_COLUMNS.map((c) => `${c} = j.value ->> '$.${c}'`).join(", ")},
+               discogs_removed_at = NULL, updated_at = ?1
+           FROM json_each(?2) AS j
+           WHERE records.discogs_instance_id = j.value ->> '$.discogs_instance_id'`,
+        )
+        .bind(now, JSON.stringify(changed)),
+    );
+  }
+  if (statements.length === 0) return { inserted: 0, updated: 0 };
+
+  const results = await db.batch(statements);
+  const changes = results.map((r) => r.meta.changes);
+  return {
+    inserted: fresh.length > 0 ? (changes.shift() ?? 0) : 0,
+    updated: changed.length > 0 ? (changes.shift() ?? 0) : 0,
+  };
+}
+
+/** Flag records whose collection item has gone from Discogs. Their history stays. */
+export async function markRecordsRemoved(db: D1Database, instanceIds: number[], now: string): Promise<number> {
+  const result = await db
+    .prepare(
+      `UPDATE records SET discogs_removed_at = ?1, updated_at = ?1
+       WHERE discogs_removed_at IS NULL AND discogs_instance_id IN (SELECT value FROM json_each(?2))`,
+    )
+    .bind(now, JSON.stringify(instanceIds))
+    .run();
+  return result.meta.changes;
+}
+
+export type SyncStatus = "running" | "ok" | "partial" | "failed";
+
+export interface SyncCounts {
+  items_seen: number;
+  added: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  skipped_not_vinyl: number;
+  skipped_ignored: number;
+}
+
+export interface SyncRunRow extends SyncCounts {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  source: "cron" | "api";
+  dry_run: 0 | 1;
+  status: SyncStatus;
+  note: string | null;
+}
+
+export async function startSyncRun(
+  db: D1Database,
+  run: { started_at: string; source: SyncRunRow["source"]; dry_run: boolean },
+): Promise<number> {
+  const row = await db
+    .prepare("INSERT INTO sync_runs (started_at, source, dry_run) VALUES (?, ?, ?) RETURNING id")
+    .bind(run.started_at, run.source, run.dry_run ? 1 : 0)
+    .first<{ id: number }>();
+  if (!row) throw new Error("Sync run insert returned no row");
+  return row.id;
+}
+
+export async function finishSyncRun(
+  db: D1Database,
+  id: number,
+  result: SyncCounts & { finished_at: string; status: Exclude<SyncStatus, "running">; note: string | null },
+): Promise<SyncRunRow> {
+  const row = await db
+    .prepare(
+      `UPDATE sync_runs
+       SET finished_at = ?, status = ?, note = ?, items_seen = ?, added = ?, updated = ?, unchanged = ?,
+           removed = ?, skipped_not_vinyl = ?, skipped_ignored = ?
+       WHERE id = ? RETURNING *`,
+    )
+    .bind(
+      result.finished_at,
+      result.status,
+      result.note,
+      result.items_seen,
+      result.added,
+      result.updated,
+      result.unchanged,
+      result.removed,
+      result.skipped_not_vinyl,
+      result.skipped_ignored,
+      id,
+    )
+    .first<SyncRunRow>();
+  if (!row) throw new Error(`Sync run ${id} vanished`);
+  return row;
+}
+
+export async function listSyncRuns(db: D1Database, limit: number): Promise<SyncRunRow[]> {
+  const { results } = await db
+    .prepare("SELECT * FROM sync_runs ORDER BY started_at DESC, id DESC LIMIT ?")
+    .bind(limit)
+    .all<SyncRunRow>();
+  return results;
+}
+
+/**
+ * When the last real sync succeeded and when one was last tried. The cron asks every minute,
+ * so both lookups walk the started_at index and stop at the first match instead of scanning.
+ */
+export async function lastSyncTimes(db: D1Database): Promise<{ last_ok: string | null; last_attempt: string | null }> {
+  const row = await db
+    .prepare(
+      `SELECT
+         (SELECT started_at FROM sync_runs WHERE dry_run = 0 AND status = 'ok' ORDER BY started_at DESC LIMIT 1) AS last_ok,
+         (SELECT started_at FROM sync_runs WHERE dry_run = 0 ORDER BY started_at DESC LIMIT 1) AS last_attempt`,
+    )
+    .first<{ last_ok: string | null; last_attempt: string | null }>();
+  return row ?? { last_ok: null, last_attempt: null };
 }
