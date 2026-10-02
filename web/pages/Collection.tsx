@@ -3,11 +3,13 @@ import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { GRADES, type Grade } from "../../src/grades";
-import { applySelection, canPrice, readSelection, SELECTION_KEYS, type Selection, type SortKey, STATUSES, type Status, writeSelection } from "../../src/select";
+import { applySelection, canPrice, facetOptions, readSelection, SELECTION_KEYS, type Selection, type SortKey, writeSelection } from "../../src/select";
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
+import { Filters, QuickFilters } from "../Filters";
 import { count, formatMinor } from "../format";
 import { useQueueRevalue, useRecords, useUpdateRecord } from "../queries";
+import { Totals } from "../Totals";
 
 export function Collection() {
   const records = useRecords();
@@ -31,9 +33,12 @@ export function Collection() {
   }
 
   const rows = useMemo(() => (records.data ? applySelection(records.data, selection) : []), [records.data, selection]);
+  const options = useMemo(() => (records.data ? facetOptions(records.data, selection) : null), [records.data, selection]);
 
-  if (records.isPending) return <Loading />;
+  if (records.isPending || options === null) return <Loading />;
   if (records.isError) return <ErrorState error={records.error} />;
+
+  const currency = records.data.find((r) => r.current_currency)?.current_currency ?? "GBP";
 
   const priceable = rows.filter(canPrice);
   const selected = priceable.filter((r) => ticked.has(r.id));
@@ -67,41 +72,11 @@ export function Collection() {
     <section className="stack">
       <div className="row-between">
         <h1>Collection</h1>
-        <p className="muted">
-          {count(rows.length)} of {count(records.data.length)} records
-        </p>
+        <Totals shown={rows} all={records.data.length} currency={currency} />
       </div>
 
-      <div className="filters" role="search">
-        <input
-          type="search"
-          className="input"
-          placeholder="Search artist, title, label, catalogue number"
-          aria-label="Search the collection"
-          value={selection.q}
-          onChange={(e) => select({ ...selection, q: e.target.value })}
-        />
-        <select className="input" aria-label="Media grade" value={selection.grade} onChange={(e) => select({ ...selection, grade: e.target.value as Grade | "" })}>
-          <option value="">Any grade</option>
-          {GRADES.map((g) => (
-            <option key={g} value={g}>
-              {g}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input"
-          aria-label="Status"
-          value={selection.status}
-          onChange={(e) => select({ ...selection, status: e.target.value as Status })}
-        >
-          {STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <QuickFilters selection={selection} onChange={select} />
+      <Filters selection={selection} options={options} currency={currency} onChange={select} />
 
       <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
 
