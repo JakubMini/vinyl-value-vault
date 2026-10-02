@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activeFilters,
   applySelection,
+  clearFilters,
   DEFAULT_SELECTION,
   decadeOf,
+  facetOptions,
   matches,
   parseFormat,
+  QUICK_FILTERS,
+  quickFilterActive,
   readSelection,
   type Selection,
   sortRecords,
+  toggleQuickFilter,
+  totals,
   writeSelection,
 } from "../src/select";
 import { listedRecord } from "./helpers";
@@ -49,13 +56,7 @@ describe("a selection in the URL", () => {
   });
 
   it("reads what is there and falls back on anything unknown", () => {
-    expect(readSelection(params("q=dummy&grade=NM&status=gone&sort=value&dir=desc"))).toEqual({
-      q: "dummy",
-      grade: "NM",
-      status: "gone",
-      sort: "value",
-      dir: "desc",
-    });
+    expect(readSelection(params("q=dummy&grade=NM&status=gone&sort=value&dir=desc"))).toEqual(select({ q: "dummy", grade: "NM", status: "gone", sort: "value", dir: "desc" }));
     expect(readSelection(params("grade=A1&status=lost&sort=colour&dir=sideways"))).toEqual(DEFAULT_SELECTION);
   });
 
@@ -69,6 +70,26 @@ describe("a selection in the URL", () => {
       ["dir", "desc"],
     ]);
     expect(readSelection(new URLSearchParams(written))).toEqual(s);
+  });
+
+  it("round-trips the narrow filters, descriptors repeated", () => {
+    const s = select({ decade: "1970s", kind: "LP", discs: "2", desc: ["Compilation", "Mono"], label: "CBS", artist: "Abba", sleeve: "VG", spotify: "no", paid: "yes", min: 5, max: 20.5, move: "up", gain: "down" });
+    const written = writeSelection(s);
+    expect(written.filter(([k]) => k === "desc")).toEqual([
+      ["desc", "Compilation"],
+      ["desc", "Mono"],
+    ]);
+    expect(readSelection(new URLSearchParams(written))).toEqual(s);
+  });
+
+  it("drops bounds and choices it cannot read", () => {
+    expect(readSelection(params("min=abc&max=-3&decade=seventies&kind=cassette&discs=9&spotify=maybe&move=sideways&gain=lots"))).toEqual(DEFAULT_SELECTION);
+    expect(readSelection(params("desc=&desc=Mono&desc=Mono")).desc).toEqual(["Mono"]);
+  });
+
+  it("clears the narrow filters and keeps the rest", () => {
+    const s = select({ q: "abba", grade: "NM", status: "all", sort: "value", dir: "desc", decade: "1970s", desc: ["Mono"], min: 5, artist: "Abba" });
+    expect(clearFilters(s)).toEqual(select({ q: "abba", grade: "NM", status: "all", sort: "value", dir: "desc" }));
   });
 });
 
@@ -139,5 +160,104 @@ describe("sorting", () => {
 
   it("filters and sorts together", () => {
     expect(applySelection(rows, select({ q: "abba", sort: "value", dir: "desc" })).map((r) => r.id)).toEqual([3, 1]);
+  });
+});
+
+describe("the narrow filters", () => {
+  const rows = [
+    listedRecord({ id: 1, artist: "Abba", label: "Polar", year: 1976, format: "LP, Album, Stereo", sleeve_condition: "NM", spotify_album_id: "x", purchase_price_minor: 500, purchase_currency: "GBP", current_value_minor: 1200, current_currency: "GBP", change_30d_minor: 100, gain_minor: 700 }),
+    listedRecord({ id: 2, artist: "Abba", label: "Polar", year: 1979, format: "2xLP, Compilation, Mono", sleeve_condition: "VG", current_value_minor: 3000, current_currency: "GBP", change_30d_minor: -50, gain_minor: null }),
+    listedRecord({ id: 3, artist: "Beatles", label: "Parlophone", year: 1965, format: '7", Single, Mono', sleeve_condition: "VG+", current_value_minor: 800, current_currency: "GBP", change_30d_minor: 0, purchase_price_minor: 1000, purchase_currency: "GBP", gain_minor: -200 }),
+    listedRecord({ id: 4, artist: "Zappa", label: null, year: null, format: null, sleeve_condition: "VG+" }),
+  ];
+  const ids = (changes: Partial<Selection>) => rows.filter((r) => matches(r, select(changes))).map((r) => r.id);
+
+  it.each([
+    [{ decade: "1970s" }, [1, 2]],
+    [{ kind: "LP" }, [1, 2]],
+    [{ kind: '7"' }, [3]],
+    [{ kind: "Unknown" }, [4]],
+    [{ discs: "2" }, [2]],
+    [{ discs: "1" }, [1, 3, 4]],
+    [{ desc: ["Mono"] }, [2, 3]],
+    [{ desc: ["mono", "Compilation"] }, [2]],
+    [{ label: "Polar" }, [1, 2]],
+    [{ artist: "Beatles" }, [3]],
+    [{ sleeve: "VG+" }, [3, 4]],
+    [{ spotify: "yes" }, [1]],
+    [{ spotify: "no" }, [2, 3, 4]],
+    [{ paid: "yes" }, [1, 3]],
+    [{ min: 10 }, [1, 2]],
+    [{ max: 10 }, [3]],
+    [{ min: 8, max: 12 }, [1, 3]],
+    [{ move: "up" }, [1]],
+    [{ move: "down" }, [2]],
+    [{ move: "flat" }, [3]],
+    [{ gain: "up" }, [1]],
+    [{ gain: "down" }, [3]],
+  ] as [Partial<Selection>, number[]][])("%j", (changes, expected) => {
+    expect(ids(changes)).toEqual(expected);
+  });
+
+  it("counts what each option would show, with that facet cleared and the rest applied", () => {
+    const o = facetOptions(rows, select({ decade: "1970s", kind: "LP" }));
+    expect(o.decade).toEqual([
+      { value: "1960s", label: "1960s", count: 0 },
+      { value: "1970s", label: "1970s", count: 2 },
+    ].filter((x) => x.count > 0));
+    expect(o.kind).toEqual([{ value: "LP", label: "LP", count: 2 }]);
+    expect(o.discs).toEqual([
+      { value: "1", label: "1 disc", count: 1 },
+      { value: "2", label: "2 discs", count: 1 },
+    ]);
+    expect(o.label).toEqual([{ value: "Polar", label: "Polar", count: 2 }]);
+    expect(o.sleeve).toEqual([
+      { value: "NM", label: "NM", count: 1 },
+      { value: "VG", label: "VG", count: 1 },
+    ]);
+    expect(o.spotify).toEqual([
+      { value: "yes", label: "On Spotify", count: 1 },
+      { value: "no", label: "Not on Spotify", count: 1 },
+    ]);
+    expect(o.move).toEqual([
+      { value: "up", label: "Rose", count: 1 },
+      { value: "down", label: "Fell", count: 1 },
+    ]);
+  });
+
+  it("stacks descriptors: counts are over the records already shown, most common first", () => {
+    expect(facetOptions(rows, select({})).desc.map((o) => `${o.value}:${o.count}`)).toEqual(["Mono:2", "Album:1", "Compilation:1", "Single:1", "Stereo:1"]);
+    expect(facetOptions(rows, select({ desc: ["Compilation"] })).desc.map((o) => `${o.value}:${o.count}`)).toEqual(["Compilation:1", "Mono:1"]);
+  });
+
+  it("adds up what is shown, in one currency", () => {
+    const other = listedRecord({ id: 5, current_value_minor: 99_999, current_currency: "USD", change_30d_minor: 5, gain_minor: 5 });
+    expect(totals([...rows, other], "GBP")).toEqual({ count: 5, priced: 3, value_minor: 5000, change_minor: 50, gain_minor: 500, paid: 2 });
+    expect(totals([rows[3]!], "GBP")).toEqual({ count: 1, priced: 0, value_minor: 0, change_minor: null, gain_minor: null, paid: 0 });
+  });
+
+  it("describes the filters in force, each with a way out", () => {
+    const s = select({ artist: "Abba", decade: "1970s", desc: ["Mono", "Compilation"], min: 5, max: 20, move: "up", q: "keep me" });
+    const chips = activeFilters(s, (n) => `£${n}`);
+    expect(chips.map((c) => c.label)).toEqual(["Abba", "1970s", "Mono", "Compilation", "£5 to £20", "Rose in 30 days"]);
+    expect(chips[2]!.next.desc).toEqual(["Compilation"]);
+    expect(chips[4]!.next).toMatchObject({ min: null, max: null, q: "keep me" });
+    expect(activeFilters(select({ max: 20 }), (n) => `£${n}`)[0]!.label).toBe("Up to £20");
+  });
+
+  it("quick filters go on and off, leaving a search alone", () => {
+    const risers = QUICK_FILTERS.find((f) => f.id === "risers")!;
+    const on = toggleQuickFilter(select({ q: "abba" }), risers);
+    expect(on).toMatchObject({ q: "abba", move: "up", sort: "change", dir: "desc" });
+    expect(quickFilterActive(on, risers)).toBe(true);
+    expect(toggleQuickFilter(on, risers)).toEqual(select({ q: "abba" }));
+    expect(rows.filter((r) => matches(r, on)).map((r) => r.id)).toEqual([1]);
+  });
+
+  it("every quick filter shows something sensible on a mixed collection", () => {
+    const expected: Record<string, number[]> = { valuable: [2, 1, 3], risers: [1], fallers: [2], waiting: [4], "no-spotify": [2, 3, 4], bargains: [1] };
+    for (const f of QUICK_FILTERS) {
+      expect(applySelection(rows, toggleQuickFilter(select({}), f)).map((r) => r.id), f.id).toEqual(expected[f.id]);
+    }
   });
 });
