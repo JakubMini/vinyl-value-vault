@@ -4,12 +4,12 @@
 
 A small serverless backend that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/health)). The collection itself is still to be imported. See the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/health)). My collection of 163 records is imported and being priced. The backend is complete for now; the dashboard is next. See the [roadmap](#roadmap).
 
 ## What it does
 
 - **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs. A whole Discogs collection can be imported in one command, and re-running it only adds what is new.
-- **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
+- **Keeps the prices fresh.** A scheduled job regularly takes a few records whose price is more than a day old and asks Discogs what they are worth today. Prices are not real time and do not need to be: a record's value moves over weeks, not minutes. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Exposes a small JSON API** so a dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -54,6 +54,10 @@ The job now works with that rather than against it:
 - **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits a minute.
 
 At best that is 7,200 record prices a day, far more than the daily refresh of a personal collection needs. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
+
+**How it behaves in practice.** Smaller batches helped, but they cannot fix traffic we do not control. On a busy minute Discogs refuses the Worker before its first call, and on a quiet one the whole batch goes through. Pricing the imported collection of 163 records for the first time therefore takes hours rather than minutes. That is an accepted trade-off: values do not need to be real time, a refused run costs nothing, and once everything is priced the daily refresh needs only about two calls per record. Also, Cloudflare has the every-minute schedule registered but was still firing the earlier five-minute one hours after the change; the job is correct on either.
+
+If fresher prices ever matter, the fix is to call Discogs from an IP address that only this project uses, such as a small scheduled job on a home machine writing prices back through the API.
 
 Expected running cost at this scale: nothing.
 
@@ -208,7 +212,7 @@ wrangler.jsonc   Worker config: bindings, vars, cron
 
 - [x] Schema, API, valuation job, tests and CI
 - [x] First deployment
-- [ ] Import my actual collection
+- [x] Import my actual collection (163 records from Discogs)
 - [ ] Dashboard: add records, see the total and its trend
 - [ ] Alexa skill: "what is my collection worth?"
 - [ ] Gain and loss against purchase price, per record and overall
