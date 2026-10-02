@@ -5,19 +5,19 @@ import { api, rawFetch, resetDatabase } from "./helpers";
 describe("the HTTP API", () => {
   beforeEach(resetDatabase);
 
-  it("answers /health without a key", async () => {
-    const res = await rawFetch("/health");
+  it("answers /api/health without a key", async () => {
+    const res = await rawFetch("/api/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, service: "vinyl-value-vault" });
   });
 
   it("rejects everything else without the key", async () => {
-    const res = await rawFetch("/collection");
+    const res = await rawFetch("/api/collection");
     expect(res.status).toBe(401);
   });
 
   it("rejects a wrong key", async () => {
-    const res = await rawFetch("/collection", { headers: { Authorization: "Bearer nope" } });
+    const res = await rawFetch("/api/collection", { headers: { Authorization: "Bearer nope" } });
     expect(res.status).toBe(401);
   });
 
@@ -90,5 +90,10 @@ describe("the HTTP API", () => {
     const res = await api("/nope");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "Not found" });
+  });
+
+  it("no longer answers at the old root paths", async () => {
+    expect((await rawFetch("/health")).status).toBe(404);
+    expect((await rawFetch("/records", { headers: { Authorization: "Bearer test-api-key" } })).status).toBe(404);
   });
 });

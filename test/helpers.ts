@@ -11,7 +11,7 @@ export async function rawFetch(path: string, init: RequestInit = {}): Promise<Re
   return exports.default.fetch(new Request(`https://vault.test${path}`, init));
 }
 
-/** Same, with the API key and an optional JSON body. */
+/** An API call: the path is relative to /api, and the key and an optional JSON body are added. */
 export async function api(path: string, init: RequestInit & { json?: unknown } = {}): Promise<Response> {
   const { json, ...rest } = init;
   const headers = new Headers(rest.headers);
@@ -21,7 +21,7 @@ export async function api(path: string, init: RequestInit & { json?: unknown } =
     headers.set("content-type", "application/json");
     body = JSON.stringify(json);
   }
-  return rawFetch(path, { ...rest, headers, body });
+  return rawFetch(`/api${path}`, { ...rest, headers, body });
 }
 
 export async function resetDatabase(): Promise<void> {

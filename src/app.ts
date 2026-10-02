@@ -1,5 +1,6 @@
 /**
- * The HTTP API. Everything except /health needs `Authorization: Bearer <API_KEY>`.
+ * The HTTP API, served under /api so the rest of the hostname is free for the dashboard.
+ * Everything except /api/health needs `Authorization: Bearer <API_KEY>`.
  * Amounts are integers in minor units; a formatted string is included for convenience.
  */
 import { Hono } from "hono";
@@ -89,7 +90,7 @@ function stripUndefined<T extends object>(value: T): { [K in keyof T]: Exclude<T
   };
 }
 
-export const app = new Hono<{ Bindings: Env }>();
+export const app = new Hono<{ Bindings: Env }>().basePath("/api");
 
 app.get("/health", (c) => c.json({ ok: true, service: "vinyl-value-vault", now: new Date().toISOString() }));
 
