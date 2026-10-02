@@ -27,7 +27,7 @@ import {
   writeSnapshot,
 } from "./db";
 import { DiscogsClient, DiscogsError, type PriceSuggestions } from "./discogs";
-import { DISCOGS_CONDITION_LABEL, type Grade } from "./grades";
+import { DISCOGS_CONDITION_LABEL, GRADES, type Grade } from "./grades";
 import { toMinor } from "./money";
 
 export type ValuationOutcome =
@@ -110,6 +110,7 @@ export async function valueRecord(
     value_minor: value.minor,
     lowest_listing_minor: lowest,
     num_for_sale: stats.num_for_sale,
+    media_condition: record.media_condition,
     raw: { stats, suggestions },
   });
   return { status: "valued", recordId: record.id, valueMinor: value.minor, method: value.method };
@@ -130,6 +131,21 @@ export function suggestedValue(raw: string | null, grade: Grade, currency: strin
   }
   const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[grade]];
   return suggestion && suggestion.currency === currency ? toMinor(suggestion.value) : null;
+}
+
+/**
+ * What a copy is worth at every grade, from a stored valuation's suggestions. Null when the
+ * payload has no suggestions at all, which is the case when the price came from the cheapest
+ * listing because Discogs would not give this account suggestions.
+ */
+export function priceByGrade(raw: string | null, currency: string): { grade: Grade; value_minor: number | null }[] | null {
+  if (!raw) return null;
+  try {
+    if (!(JSON.parse(raw) as { suggestions?: unknown }).suggestions) return null;
+  } catch {
+    return null;
+  }
+  return GRADES.map((grade) => ({ grade, value_minor: suggestedValue(raw, grade, currency) }));
 }
 
 /**

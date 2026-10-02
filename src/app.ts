@@ -11,7 +11,7 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 
 import { AccessUnavailable, verifyAccessJwt } from "./access";
-import type { ApiRecord, CollectionResponse, ListedRecord, RecordsPage, SyncRun } from "./api-types";
+import type { ApiRecord, CollectionResponse, ListedRecord, RecordDetail, RecordsPage, SyncRun } from "./api-types";
 import {
   type ListedRecordRow,
   type RecordInput,
@@ -21,6 +21,7 @@ import {
   deleteRecord,
   getRecord,
   insertRecord,
+  latestDiscogsValuation,
   listRecords,
   listSnapshots,
   listSyncRuns,
@@ -32,7 +33,7 @@ import { GRADES } from "./grades";
 import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
 import { syncCollection } from "./sync";
-import { discogsFromEnv, regrade, runValuationBatch, valueRecord } from "./valuation";
+import { discogsFromEnv, priceByGrade, regrade, runValuationBatch, valueRecord } from "./valuation";
 
 const grade = z.enum(GRADES);
 
@@ -71,6 +72,9 @@ const pageSchema = z.object({
 const recordsPageSchema = pageSchema.extend({ limit: z.coerce.number().int().min(1).max(1000).default(50) });
 
 const DAY_MS = 86_400_000;
+
+// A year of daily prices by default; more on request.
+const historySchema = z.object({ limit: z.coerce.number().int().min(1).max(1000).default(365) });
 
 const flag = z
   .enum(["true", "false"])
@@ -228,13 +232,22 @@ app.post("/records", validate("json", createRecordSchema), async (c) => {
   return c.json(presentRecord(record), 201);
 });
 
-app.get("/records/:id", async (c) => {
+app.get("/records/:id", validate("query", historySchema), async (c) => {
   const id = parseId(c.req.param("id"));
   if (id === null) return c.json({ error: "Invalid id" }, 400);
   const record = await getRecord(c.env.DB, id);
   if (!record) return c.json({ error: "Not found" }, 404);
-  const valuations = await listValuations(c.env.DB, id, 50);
-  return c.json({ ...presentRecord(record), valuations });
+  const [valuations, latest] = await Promise.all([
+    listValuations(c.env.DB, id, c.req.valid("query").limit),
+    latestDiscogsValuation(c.env.DB, id),
+  ]);
+  return c.json({
+    ...presentRecord(record),
+    valuations,
+    latest_method: latest?.method ?? null,
+    price_by_grade: latest ? priceByGrade(latest.raw, c.env.VALUATION_CURRENCY) : null,
+    discogs_url: record.discogs_release_id ? `https://www.discogs.com/release/${record.discogs_release_id}` : null,
+  } satisfies RecordDetail);
 });
 
 // A new media grade re-prices the record straight away from stored Discogs suggestions; see regrade().

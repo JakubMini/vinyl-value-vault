@@ -12,7 +12,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth, lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Price history charts come next.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth, lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when. A chart of the whole collection's value comes next.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
 ## How it works
@@ -83,7 +83,7 @@ Expected running cost at this scale: nothing.
 | Runtime | [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Serverless, globally deployed, generous free tier, and the cron, database and HTTP surface come from one platform. |
 | Database | [D1](https://developers.cloudflare.com/d1/) | A hosted SQLite database with migrations and a binding straight into the Worker. Right-sized for a personal collection. |
 | Scheduling | [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) | A line of config, no scheduler to run. |
-| Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/), on [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) | One deploy and one origin with the API. Cloudflare's Vite plugin runs the Worker in the real runtime during development, next to the app. [TanStack Query](https://tanstack.com/query) handles fetching and caching; styling is plain CSS with light and dark tokens. |
+| Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/), on [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) | One deploy and one origin with the API. Cloudflare's Vite plugin runs the Worker in the real runtime during development, next to the app. [TanStack Query](https://tanstack.com/query) handles fetching and caching; styling is plain CSS with light and dark tokens. Charts are drawn as plain SVG by one small component rather than a charting library. |
 | HTTP | [Hono](https://hono.dev/) | A small, fast, well-typed router built for the Workers runtime. |
 | Sign-in | [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) | A login page for the dashboard without writing one, free for a personal project. The Worker verifies Access's signed token itself, so a misconfiguration locks the door rather than opening it. |
 | Validation | [Zod](https://zod.dev/) | Every request body and query string is checked before it touches the database. |
@@ -98,7 +98,7 @@ Five tables. Money is stored as integers in minor units (pence) so there is no f
 | Table | One row per | Notes |
 | --- | --- | --- |
 | `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs and a flag for records that have left the Discogs collection. |
-| `valuations` | price fetched for a record | Append-only history, with the method used and the raw Discogs payload for re-deriving later. |
+| `valuations` | price fetched for a record | Append-only history, with the method used, the grade the price was for, and the raw Discogs payload for re-deriving later (a regrade does exactly that). |
 | `collection_snapshots` | valuation run that changed something | The collection total over time, ready to chart. |
 | `sync_runs` | collection sync | What each sync added, refreshed and flagged, and why one stopped early. Also how the cron knows when the next sync is due. |
 | `sync_ignored` | record deleted on purpose | Discogs collection items the sync must not bring back. |
@@ -115,7 +115,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | `GET /api/collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
 | `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
-| `GET /api/records/:id` | One record with its valuation history. |
+| `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, and a link to the release on Discogs. |
 | `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. |
 | `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
@@ -263,7 +263,8 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Import my actual collection, and keep it in sync with Discogs
 - [x] Dashboard, first step: the total, and syncing with Discogs
 - [x] Dashboard: the collection table, sorting and grading
-- [ ] Dashboard: each record's price history, and the collection's
+- [x] Dashboard: each record's page and price history
+- [ ] Dashboard: the collection's value over time, and its biggest risers and fallers
 - [ ] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"
 - [ ] Gain and loss against purchase price, per record and overall

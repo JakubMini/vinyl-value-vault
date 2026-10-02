@@ -45,6 +45,32 @@ export interface ListedRecord extends ApiRecord {
   gain_minor: number | null;
 }
 
+/** One price in a record's history. */
+export interface ValuationPoint {
+  id: number;
+  record_id: number;
+  valued_at: string;
+  /** 'discogs' when fetched, 'regrade' when worked out from stored suggestions after a grade change. */
+  source: string;
+  method: "price_suggestion" | "lowest_listing";
+  currency: string;
+  value_minor: number;
+  lowest_listing_minor: number | null;
+  num_for_sale: number | null;
+  media_condition: Grade | null;
+}
+
+/** A record with its price history, as the record page shows it. */
+export interface RecordDetail extends ApiRecord {
+  /** Newest first. */
+  valuations: ValuationPoint[];
+  /** How the latest price from Discogs was worked out, or null if it has never been priced. */
+  latest_method: ValuationPoint["method"] | null;
+  /** Discogs' suggestion for every grade, from the latest price; null when Discogs gave none. */
+  price_by_grade: { grade: Grade; value_minor: number | null }[] | null;
+  discogs_url: string | null;
+}
+
 export interface Snapshot {
   id: number;
   taken_at: string;
