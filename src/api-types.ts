@@ -28,6 +28,16 @@ export interface ApiRecord {
   current_value: string | null;
   last_valued_at: string | null;
   last_valuation_error: string | null;
+  /**
+   * How the value on screen was found: Discogs' suggestion for the record's grade, or the
+   * cheapest copy for sale. Rolled up from the latest valuation, a regrade included, unlike
+   * RecordDetail.latest_method, which is about the latest price fetched from Discogs.
+   */
+  current_method: "price_suggestion" | "lowest_listing" | null;
+  /** The cheapest copy for sale on Discogs when the record was last priced, in any grade. */
+  current_lowest_listing_minor: number | null;
+  /** How many copies were for sale then. */
+  current_num_for_sale: number | null;
   cover_image_url: string | null;
   thumb_url: string | null;
   discogs_added_at: string | null;

@@ -12,26 +12,35 @@ const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY).toISOString();
 const gbp = (value: number) => ({ currency: "GBP", value });
 
-/** A stored Discogs valuation, as the job writes it, and the record's current value set to match. */
+/** A stored Discogs valuation, as the job writes it, and the record's current value and market figures set to match. */
 async function priced(
   recordId: number,
   valueMinor: number,
   valuedAt: string,
-  options: { currency?: string; suggestions?: Record<string, { currency: string; value: number }> | null; source?: string } = {},
+  options: {
+    currency?: string;
+    suggestions?: Record<string, { currency: string; value: number }> | null;
+    source?: string;
+    method?: "price_suggestion" | "lowest_listing";
+    lowest?: number | null;
+    forSale?: number | null;
+  } = {},
 ): Promise<void> {
   const currency = options.currency ?? "GBP";
-  const raw = JSON.stringify({ stats: { lowest_price: null, num_for_sale: 4 }, suggestions: options.suggestions ?? null });
+  const method = options.method ?? "price_suggestion";
+  const lowest = options.lowest === undefined ? 1500 : options.lowest;
+  const forSale = options.forSale === undefined ? 4 : options.forSale;
+  const raw = JSON.stringify({ stats: { lowest_price: null, num_for_sale: forSale }, suggestions: options.suggestions ?? null });
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO valuations (record_id, valued_at, source, method, currency, value_minor, lowest_listing_minor, num_for_sale, raw)
-       VALUES (?, ?, ?, 'price_suggestion', ?, ?, 1500, 4, ?)`,
-    ).bind(recordId, valuedAt, options.source ?? "discogs", currency, valueMinor, raw),
-    env.DB.prepare("UPDATE records SET current_value_minor = ?, current_currency = ?, last_valued_at = ? WHERE id = ?").bind(
-      valueMinor,
-      currency,
-      valuedAt,
-      recordId,
-    ),
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(recordId, valuedAt, options.source ?? "discogs", method, currency, valueMinor, lowest, forSale, raw),
+    env.DB.prepare(
+      `UPDATE records
+       SET current_value_minor = ?, current_currency = ?, current_method = ?, current_lowest_listing_minor = ?, current_num_for_sale = ?, last_valued_at = ?
+       WHERE id = ?`,
+    ).bind(valueMinor, currency, method, lowest, forSale, valuedAt, recordId),
   ]);
 }
 
@@ -39,6 +48,9 @@ interface Listed {
   id: number;
   change_30d_minor: number | null;
   gain_minor: number | null;
+  current_method: string | null;
+  current_lowest_listing_minor: number | null;
+  current_num_for_sale: number | null;
 }
 
 async function listed(): Promise<Map<number, Listed>> {
@@ -141,6 +153,33 @@ describe("changing a record's media grade", () => {
 
     const body = await (await api(`/records/${record.id}`, { method: "PATCH", json: { sleeve_condition: "VG", notes: "Ring wear" } })).json();
     expect(body).toMatchObject({ current_value_minor: 2500, last_valued_at: when, sleeve_condition: "VG" });
+  });
+});
+
+describe("the market behind a price", () => {
+  it("rolls how the price was found, the cheapest copy and how many are for sale onto the record", async () => {
+    const record = await seedRecord({ artist: "Nirvana", title: "Nevermind", discogs_release_id: 249504 });
+    mockStats(249504, { lowest_price: gbp(18.5), num_for_sale: 2, blocked_from_sale: false });
+    mockSuggestions(249504, { "Very Good Plus (VG+)": gbp(25) });
+    await api(`/records/${record.id}/revalue`, { method: "POST" });
+    expect((await listed()).get(record.id)).toMatchObject({ current_method: "price_suggestion", current_lowest_listing_minor: 1850, current_num_for_sale: 2 });
+
+    mockStats(249504, { lowest_price: gbp(17), num_for_sale: 1, blocked_from_sale: false });
+    mockSuggestions(249504, {});
+    await api(`/records/${record.id}/revalue`, { method: "POST" });
+    expect((await listed()).get(record.id)).toMatchObject({ current_method: "lowest_listing", current_lowest_listing_minor: 1700, current_num_for_sale: 1 });
+  });
+
+  it("treats a regrade as a suggestion, keeping the market figures of the price it came from", async () => {
+    const record = await seedRecord({ artist: "A", title: "B", discogs_release_id: 8 });
+    await priced(record.id, 1850, daysAgo(2), { suggestions: { "Near Mint (NM or M-)": gbp(32.5) }, method: "lowest_listing", lowest: 1850, forSale: 3 });
+
+    const regraded = await (await api(`/records/${record.id}`, { method: "PATCH", json: { media_condition: "NM" } })).json();
+    expect(regraded).toMatchObject({ current_value_minor: 3250, current_method: "price_suggestion", current_lowest_listing_minor: 1850, current_num_for_sale: 3 });
+
+    // No suggestion for Fair: the value and everything about it stay as they were.
+    const kept = await (await api(`/records/${record.id}`, { method: "PATCH", json: { media_condition: "F" } })).json();
+    expect(kept).toMatchObject({ current_value_minor: 3250, current_method: "price_suggestion", current_lowest_listing_minor: 1850, current_num_for_sale: 3 });
   });
 });
 

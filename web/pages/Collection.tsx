@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { GRADES, type Grade } from "../../src/grades";
-import { applySelection, canPrice, facetOptions, readSelection, SELECTION_KEYS, type Selection, type SortKey, writeSelection } from "../../src/select";
+import { applySelection, canPrice, facetOptions, isScarce, readSelection, SELECTION_KEYS, type Selection, type SortKey, writeSelection } from "../../src/select";
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { Filters, QuickFilters } from "../Filters";
@@ -109,6 +109,7 @@ export function Collection() {
                 {header("value", "Value", { numeric: true })}
                 {header("change", "30 days", { numeric: true, narrow: false })}
                 {header("gain", "Gain", { numeric: true, narrow: false })}
+                {header("forsale", "For sale", { numeric: true, narrow: false })}
                 {header("valued", "Priced", { narrow: false })}
               </tr>
             </thead>
@@ -220,6 +221,18 @@ function RecordRow({ record: r, ticked, onToggle }: { record: ListedRecord; tick
       </td>
       <td className="num hide-narrow">
         <MoneyChange minor={r.gain_minor} currency={r.current_currency} />
+      </td>
+      <td className="num hide-narrow">
+        {r.current_num_for_sale !== null ? (
+          <span
+            className={isScarce(r) ? "scarce" : undefined}
+            title={r.current_lowest_listing_minor !== null && r.current_currency ? `Cheapest copy ${formatMinor(r.current_lowest_listing_minor, r.current_currency)}` : undefined}
+          >
+            {count(r.current_num_for_sale)}
+          </span>
+        ) : (
+          <span className="muted">—</span>
+        )}
       </td>
       <td className="hide-narrow">
         {r.last_valuation_error ? (

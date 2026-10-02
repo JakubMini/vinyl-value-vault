@@ -1080,3 +1080,8 @@ th[aria-sort="descending"] {
     content: none;
   }
 }
+
+.scarce {
+  color: var(--warning);
+  font-weight: 600;
+}

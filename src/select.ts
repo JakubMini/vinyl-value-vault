@@ -7,11 +7,11 @@
 import type { ListedRecord } from "./api-types";
 import { GRADES, type Grade } from "./grades";
 
-export type SortKey = "artist" | "title" | "year" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added";
+export type SortKey = "artist" | "title" | "year" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added" | "forsale";
 export type SortDir = "asc" | "desc";
 export type Status = "collection" | "priced" | "waiting" | "problem" | "gone" | "all";
 
-export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "media", "sleeve", "value", "change", "gain", "valued", "added"];
+export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "media", "sleeve", "value", "change", "gain", "valued", "added", "forsale"];
 
 export const STATUSES: readonly { value: Status; label: string }[] = [
   { value: "collection", label: "In the collection" },
@@ -26,11 +26,16 @@ export type YesNo = "" | "yes" | "no";
 export type Discs = "" | "1" | "2" | "3+";
 export type Move = "" | "up" | "down" | "flat";
 export type GainDir = "" | "up" | "down";
+export type How = "" | "suggestion" | "listing";
+
+/** A record with this many copies for sale, or fewer, counts as scarce. */
+export const SCARCE_COPIES = 3;
 
 const YES_NO = ["yes", "no"] as const;
 const DISCS = ["1", "2", "3+"] as const;
 const MOVES = ["up", "down", "flat"] as const;
 const GAIN_DIRS = ["up", "down"] as const;
+const HOWS = ["suggestion", "listing"] as const;
 
 export interface Selection {
   /** Free text, matched against artist, title, label and catalogue number. */
@@ -60,6 +65,10 @@ export interface Selection {
   move: Move;
   /** Worth more, or less, than what was paid. */
   gain: GainDir;
+  /** Priced from Discogs' suggestion for the grade, or from the cheapest copy for sale. */
+  how: How;
+  /** Only records with SCARCE_COPIES copies for sale or fewer. */
+  scarce: boolean;
 }
 
 export const DEFAULT_SELECTION: Readonly<Selection> = {
@@ -81,6 +90,8 @@ export const DEFAULT_SELECTION: Readonly<Selection> = {
   max: null,
   move: "",
   gain: "",
+  how: "",
+  scarce: false,
 };
 
 /** The URL parameters a selection is kept in. Anything else in the URL belongs to someone else. */
@@ -103,6 +114,8 @@ export const SELECTION_KEYS = [
   "max",
   "move",
   "gain",
+  "how",
+  "scarce",
 ] as const;
 
 /** What a selection is read from: URLSearchParams, or anything shaped like it. */
@@ -151,6 +164,8 @@ export function readSelection(params: ParamsLike): Selection {
     max: amount(params.get("max")),
     move: oneOf(params.get("move"), MOVES, ""),
     gain: oneOf(params.get("gain"), GAIN_DIRS, ""),
+    how: oneOf(params.get("how"), HOWS, ""),
+    scarce: params.get("scarce") === "1",
   };
 }
 
@@ -178,12 +193,14 @@ export function writeSelection(s: Selection): [string, string][] {
   put("max", s.max);
   put("move", s.move);
   put("gain", s.gain);
+  put("how", s.how);
+  if (s.scarce) put("scarce", "1");
   return out;
 }
 
 /** The narrow filters cleared; search, grade, status and sort order stay. */
 export function clearFilters(s: Selection): Selection {
-  return { ...s, sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", artist: "", spotify: "", paid: "", min: null, max: null, move: "", gain: "" };
+  return { ...s, sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", artist: "", spotify: "", paid: "", min: null, max: null, move: "", gain: "", how: "", scarce: false };
 }
 
 /** Only a record with a Discogs release, still in the collection, can be priced. */
@@ -255,7 +272,14 @@ export function matches(r: ListedRecord, s: Selection): boolean {
     if (g === null) return false;
     if (s.gain === "up" ? g <= 0 : g >= 0) return false;
   }
+  if (s.how && r.current_method !== (s.how === "suggestion" ? "price_suggestion" : "lowest_listing")) return false;
+  if (s.scarce && !isScarce(r)) return false;
   return true;
+}
+
+/** Few copies for sale: a pressing that rarely comes up. */
+export function isScarce(r: ListedRecord): boolean {
+  return r.current_num_for_sale !== null && r.current_num_for_sale <= SCARCE_COPIES;
 }
 
 const GRADE_RANK = new Map<string, number>(GRADES.map((g, i) => [g, i]));
@@ -273,6 +297,7 @@ const SORTS: Record<SortKey, (r: ListedRecord) => string | number | null> = {
   gain: (r) => r.gain_minor,
   valued: (r) => r.last_valued_at,
   added: (r) => r.discogs_added_at ?? r.created_at,
+  forsale: (r) => r.current_num_for_sale,
 };
 
 function compare(a: string | number, b: string | number): number {
@@ -357,7 +382,7 @@ export function decadeOf(year: number | null | undefined): string | null {
 
 // --- What a selection could narrow to, and what it adds up to --------------------------------
 
-export type FacetKey = "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "spotify" | "paid" | "move" | "gain";
+export type FacetKey = "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "spotify" | "paid" | "move" | "gain" | "how";
 
 export interface FacetOption {
   value: string;
@@ -368,7 +393,7 @@ export interface FacetOption {
 
 export type FacetOptions = Record<FacetKey, FacetOption[]>;
 
-const FACET_RESET: { [K in FacetKey]: Selection[K] } = { sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", spotify: "", paid: "", move: "", gain: "" };
+const FACET_RESET: { [K in FacetKey]: Selection[K] } = { sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", spotify: "", paid: "", move: "", gain: "", how: "" };
 
 const DISC_LABELS: Record<Exclude<Discs, "">, string> = { "1": "1 disc", "2": "2 discs", "3+": "3 or more" };
 const YES_NO_LABELS = {
@@ -377,6 +402,7 @@ const YES_NO_LABELS = {
 } as const;
 const MOVE_LABELS: Record<Exclude<Move, "">, string> = { up: "Rose", down: "Fell", flat: "Flat" };
 const GAIN_LABELS: Record<Exclude<GainDir, "">, string> = { up: "Worth more than paid", down: "Worth less than paid" };
+const HOW_LABELS: Record<Exclude<How, "">, string> = { suggestion: "Discogs' suggestion", listing: "Cheapest copy for sale" };
 
 /**
  * The options for every facet, each with the number of records it would show. A facet's counts
@@ -415,6 +441,7 @@ export function facetOptions(records: readonly ListedRecord[], s: Selection): Fa
     paid: yesNo("paid", (r) => r.purchase_price_minor !== null),
     move: inOrder(MOVES, tally(without("move"), (r) => (r.change_30d_minor === null ? null : r.change_30d_minor > 0 ? "up" : r.change_30d_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
     gain: inOrder(GAIN_DIRS, tally(without("gain"), (r) => (r.gain_minor === null ? null : r.gain_minor > 0 ? "up" : r.gain_minor < 0 ? "down" : null)), (v) => GAIN_LABELS[v as Exclude<GainDir, "">]),
+    how: inOrder(HOWS, tally(without("how"), (r) => (r.current_method === "price_suggestion" ? "suggestion" : r.current_method === "lowest_listing" ? "listing" : null)), (v) => HOW_LABELS[v as Exclude<How, "">]),
   };
 }
 
@@ -472,6 +499,8 @@ export function activeFilters(s: Selection, money: (major: number) => string): A
   else if (s.max !== null) add("value", `Up to ${money(s.max)}`, { min: null, max: null });
   if (s.move) add("move", `${MOVE_LABELS[s.move]} in 30 days`, { move: "" });
   if (s.gain) add("gain", GAIN_LABELS[s.gain], { gain: "" });
+  if (s.how) add("how", `Priced from ${s.how === "suggestion" ? "a suggestion" : "a listing"}`, { how: "" });
+  if (s.scarce) add("scarce", `${SCARCE_COPIES} or fewer for sale`, { scarce: false });
   return out;
 }
 
@@ -490,6 +519,7 @@ export const QUICK_FILTERS: readonly QuickFilter[] = [
   { id: "waiting", label: "Needs a price", preset: { status: "waiting" } },
   { id: "no-spotify", label: "No Spotify yet", preset: { spotify: "no" } },
   { id: "bargains", label: "Bought for less than worth", preset: { gain: "up", sort: "gain", dir: "desc" } },
+  { id: "scarce", label: "Scarce", preset: { scarce: true, sort: "forsale", dir: "asc" } },
 ];
 
 const presetKeys = (f: QuickFilter) => Object.keys(f.preset) as (keyof Selection)[];

@@ -125,7 +125,13 @@ describe("valuing a record", () => {
     mockSuggestions(DUMMY, {});
     const body = (await (await api(`/records/${seeded.id}/revalue`, { method: "POST" })).json()) as { outcome: unknown; record: unknown };
     expect(body.outcome).toMatchObject({ status: "unpriced", reason: "No copies for sale and no price suggestion" });
-    expect(body.record).toMatchObject({ current_value_minor: 2000, last_valuation_error: "No copies for sale and no price suggestion" });
+    expect(body.record).toMatchObject({
+      current_value_minor: 2000,
+      last_valuation_error: "No copies for sale and no price suggestion",
+      current_method: "lowest_listing",
+      current_lowest_listing_minor: 2000,
+      current_num_for_sale: 1,
+    });
   });
 });
 

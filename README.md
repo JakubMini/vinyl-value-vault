@@ -12,7 +12,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes up to 15 records whose price is more than a day old and asks Discogs what they are worth today, by way of my laptop. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts and searches, and narrows by status, grade, decade, format, number of discs, pressing (compilation, reissue, mono...), label, sleeve, value, Spotify and price paid, with quick views such as most valuable, biggest risers and needs a price. Whatever is shown is added up: what it is worth, how that moved in 30 days, the gain on what was paid. Every filter is in the URL, so a view can be bookmarked. I can grade each record in place, re-price the records I tick (or all of them: "revalue every 1970s LP" is a filter, a tick and a button), and run or preview a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts and searches, and narrows by status, grade, decade, format, number of discs, pressing (compilation, reissue, mono...), label, sleeve, value, Spotify and price paid, with quick views such as most valuable, biggest risers and needs a price. A "For sale" column shows how many copies are on Discogs, with a quick view for the scarce ones (three or fewer). Whatever is shown is added up: what it is worth, how that moved in 30 days, the gain on what was paid. Every filter is in the URL, so a view can be bookmarked. I can grade each record in place, re-price the records I tick (or all of them: "revalue every 1970s LP" is a filter, a tick and a button), and run or preview a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
 - **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -49,7 +49,7 @@ Discogs is the reference market for records and offers two useful numbers for an
 
 The cheapest listing is a rough figure. It is what one seller is asking, for a copy in any grade, and it misses in both directions. Before the account had seller settings, every price came from it: one record in demand, with six copies listed, was valued about 50% above its median sale, and a common record with 245 copies listed was valued at 10p.
 
-Which of the two produced a value is stored with every valuation, so the figures are never mixed up. When the value is the cheapest listing, the record page says why: the account gets no suggestions, they are in another currency, or Discogs has too few sales of that release to suggest a price. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
+Which of the two produced a value is stored with every valuation, so the figures are never mixed up, and rolled up onto the record along with the cheapest copy for sale and how many copies there were, so the table and the record page can show the market behind a price without another read. When the value is the cheapest listing, the record page says why: the account gets no suggestions, they are in another currency, or Discogs has too few sales of that release to suggest a price. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
 
 The Discogs website also shows the lowest, median and highest price of recent sales, which is the closest thing to a true market value. The API does not offer it, and the page needs a login, so the vault cannot read it. Other sources were considered and left out. eBay's sold-price API is open only to developers eBay approves. Its open API has asking prices only, without Goldmine grades, and barcodes are often shared between pressings. Popsike, MusicStack and CDandLP have no public API.
 
@@ -166,7 +166,7 @@ Six tables. Money is stored as integers in minor units (pence) so there is no fl
 
 | Table | One row per | Notes |
 | --- | --- | --- |
-| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs, a flag for records that have left the Discogs collection, and the Spotify album a record is pinned to. |
+| `records` | record in the collection | Carries the current value and when it was last looked at, and with it how that value was found (a suggestion or the cheapest listing), the cheapest copy for sale and how many were for sale, all rolled up from the latest valuation so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs, a flag for records that have left the Discogs collection, and the Spotify album a record is pinned to. |
 | `valuations` | price fetched for a record | Append-only history, with the method used, the grade the price was for, and the raw Discogs payload for re-deriving later (a regrade does exactly that). |
 | `collection_snapshots` | valuation run that changed something | The collection total after every run, roughly one a minute while prices are being refreshed. |
 | `collection_daily` | day | The last total of each day, kept current by the job. What the chart reads. |
@@ -183,7 +183,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | --- | --- |
 | `GET /api/health` | Liveness check. No key needed. |
 | `GET /api/collection?days=` | Total value, record counts, when the last price arrived, and one total per day for the last `days` days (30 by default, up to ten years), oldest first. |
-| `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
+| `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days, its gain against what I paid (when both are in the same currency), how its price was found (`current_method`), the cheapest copy for sale and how many were for sale when it was last priced. |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, whether that price had a suggestion to go on (`suggestions`: `available`, `unavailable`, `no_data` or `wrong_currency`), and a link to the release on Discogs. |
 | `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. `spotify_album_id` takes an album link, a `spotify:album:` URI or a bare id, and stores the id. |
@@ -220,6 +220,9 @@ curl -s -X POST http://localhost:8787/api/records \
   "current_value_minor": 2500,
   "current_currency": "GBP",
   "current_value": "£25.00",
+  "current_method": "price_suggestion",
+  "current_lowest_listing_minor": 1850,
+  "current_num_for_sale": 42,
   "last_valued_at": "2026-10-02T09:00:00.000Z",
   "last_valuation_error": null
 }
@@ -346,7 +349,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [ ] Sold prices from Discogs' sales history, entered by hand, if the suggestions prove off
 - [x] Gain and loss against purchase price, per record and overall
 - [x] Dashboard: selection criteria for the table (decade, format, label, grades, value, Spotify, price paid), quick filters, and totals for whatever is shown
-- [ ] Market signals: copies for sale, the cheapest listing and how each price was found, on the record page and in the table
+- [x] Market signals: copies for sale, the cheapest listing and how each price was found, on the record page and in the table
 - [ ] Dashboard: an Insights page: where the value sits by decade, format, grade, label and artist; the spread of values; how the collection has grown
 - [ ] Price change over a chosen window (a week, a month, a quarter, a year), for the dashboard and the Alexa skill
 - [ ] Genres and styles from Discogs, for filters and charts

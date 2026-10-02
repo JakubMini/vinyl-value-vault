@@ -75,6 +75,7 @@ export function Filters({ selection: s, options, currency, onChange }: Props) {
         <FacetSelect label="Price paid" value={s.paid} options={options.paid} onChange={(v) => set("paid", v as Selection["paid"])} />
         <FacetSelect label="Last 30 days" value={s.move} options={options.move} onChange={(v) => set("move", v as Selection["move"])} />
         <FacetSelect label="Against what I paid" value={s.gain} options={options.gain} onChange={(v) => set("gain", v as Selection["gain"])} />
+        <FacetSelect label="Priced from" value={s.how} options={options.how} onChange={(v) => set("how", v as Selection["how"])} />
         <MoneyRange min={s.min} max={s.max} currency={currency} onChange={(min, max) => onChange({ ...s, min, max })} />
         {options.desc.length > 0 ? (
           <div className="facet facet-wide">
