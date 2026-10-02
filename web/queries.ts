@@ -59,7 +59,7 @@ export function useDeleteRecord() {
   });
 }
 
-export type RecordPatch = Partial<Pick<ApiRecord, "media_condition" | "sleeve_condition" | "purchase_price_minor" | "purchase_currency" | "purchased_on" | "notes">>;
+export type RecordPatch = Partial<Pick<ApiRecord, "media_condition" | "sleeve_condition" | "purchase_price_minor" | "purchase_currency" | "purchased_on" | "notes" | "spotify_album_id">>;
 
 /**
  * Change a record. The list updates at once and is put back if the server says no; the

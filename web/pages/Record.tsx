@@ -7,6 +7,7 @@ import { ApiError } from "../api";
 import { ErrorState, Loading, When } from "../components";
 import { count, dateTime, formatMinor } from "../format";
 import { LineChart } from "../LineChart";
+import { Listen } from "../Listen";
 import { type RecordPatch, useDeleteRecord, useRecord, useRevalue, useUpdateRecord } from "../queries";
 
 export function Record() {
@@ -29,6 +30,7 @@ export function Record() {
         <GradeLadder record={r} />
       </div>
       <History record={r} />
+      <Listen record={r} />
       <EditCopy key={r.updated_at} record={r} />
       <Danger record={r} />
     </section>

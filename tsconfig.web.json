@@ -1,6 +1,6 @@
 {
   // The dashboard runs in a browser, so it type-checks against the DOM, not the Workers runtime.
-  // It shares only Worker-free modules from src/: response types, grades and money formatting.
+  // It shares only Worker-free modules from src/: response types, grades, money formatting, Spotify links.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["web", "src/api-types.ts", "src/grades.ts", "src/money.ts"]
+  "include": ["web", "src/api-types.ts", "src/grades.ts", "src/money.ts", "src/spotify.ts"]
 }

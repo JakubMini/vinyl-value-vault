@@ -27,6 +27,7 @@ export interface RecordRow {
   thumb_url: string | null;
   discogs_added_at: string | null;
   discogs_removed_at: string | null;
+  spotify_album_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -92,6 +93,7 @@ export const EDITABLE_COLUMNS = [
   "purchase_currency",
   "purchased_on",
   "notes",
+  "spotify_album_id",
 ] as const;
 
 export type EditableColumn = (typeof EDITABLE_COLUMNS)[number];
