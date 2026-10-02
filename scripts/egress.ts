@@ -220,6 +220,11 @@ function setRoad(road: Road): void {
   console.log(`✓ The vault is on the ${road} road (DISCOGS_ROAD=${road})`);
 }
 
+// The tail takes several seconds to connect and says nothing when it has, and each deployed
+// version's cron fires at its own second past the minute. Two minutes always includes one
+// whole minute of listening, so on the tunnel road a run is never missed.
+const RUN_WINDOW_MS = 120_000;
+
 /**
  * Tails the Worker until its next run logs a line, or `timeoutMs` passes. On the tunnel road a
  * run logs every minute; on the pool road only every fifth minute.
@@ -283,9 +288,9 @@ async function here(): Promise<void> {
   await startAgent(token);
   setRoad("tunnel");
 
-  console.log("Waiting for the next run (up to 80 seconds)…");
-  const run = await nextRun(80_000);
-  if (!run) fail("No run was logged within 80 seconds. Check `npm run egress:status` in a minute.");
+  console.log("Waiting for the next run (up to two minutes)…");
+  const run = await nextRun(RUN_WINDOW_MS);
+  if (!run) fail("No run was logged within two minutes. Check `npm run egress:status`.");
   if (run.road === undefined) {
     console.warn("! The deployed Worker does not know about roads yet. Deploy the current main (`npm run deploy`),");
     console.warn("  then check `npm run egress:status`. This machine's connector is ready for it.");
@@ -325,12 +330,12 @@ async function status(): Promise<void> {
   for (const c of list) console.log(describeConnector(c, local));
   if (process.platform === "darwin") console.log(`This machine's agent: ${agentRunning() ? "running" : existsSync(plistFile) ? "installed, not running" : "not installed"}`);
 
-  console.log("\nWaiting for the next run to see the road (up to 70 seconds)…");
-  const run = await nextRun(70_000);
+  console.log("\nWaiting for the next run to see the road (up to two minutes)…");
+  const run = await nextRun(RUN_WINDOW_MS);
   if (run) {
     console.log(`Road: ${String(run.road ?? "unknown")}. ${describeRun(run)}`);
   } else {
-    console.log("Road: pool. No run this minute, and on the pool road the vault runs every five minutes.");
+    console.log("Road: pool. No run in a whole minute, and on the pool road the vault runs every five minutes.");
   }
 }
 
