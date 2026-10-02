@@ -1,15 +1,17 @@
 import { type FormEvent, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import type { RecordDetail, ValuationPoint } from "../../src/api-types";
 import { GRADES, type Grade } from "../../src/grades";
+import { annualisedReturn, standing } from "../../src/insights";
 import { ApiError } from "../api";
-import { ErrorState, Loading, When } from "../components";
-import { count, dateTime, formatMinor } from "../format";
+import { ErrorState, Loading, MoneyChange, Tile, When } from "../components";
+import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
 import { Listen } from "../Listen";
-import { type RecordPatch, useDeleteRecord, useRecord, useRevalue, useUpdateRecord } from "../queries";
+import { type RecordPatch, useDeleteRecord, useRecord, useRecords, useRevalue, useUpdateRecord } from "../queries";
+import { RANGES, readRange, withRange } from "../range";
 
 export function Record() {
   const id = Number(useParams().id);
@@ -26,6 +28,7 @@ export function Record() {
         ← Collection
       </Link>
       <Header record={r} />
+      <StandingTiles record={r} />
       <div className="split">
         <ValueCard record={r} />
         <GradeLadder record={r} />
@@ -67,6 +70,14 @@ function Header({ record: r }: { record: RecordDetail }) {
               View on Discogs ↗
             </a>
           ) : null}
+          <Link className="button" to={collectionLink({ artist: r.artist, status: "all" })}>
+            More by {r.artist}
+          </Link>
+          {r.label ? (
+            <Link className="button" to={collectionLink({ label: r.label, status: "all" })}>
+              More on {r.label}
+            </Link>
+          ) : null}
           {r.discogs_removed_at ? (
             <span className="badge badge-neutral">
               Gone from Discogs <When iso={r.discogs_removed_at} />
@@ -74,6 +85,44 @@ function Header({ record: r }: { record: RecordDetail }) {
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Where this record stands in the collection, and what the purchase has returned. Uses the list the table already caches. */
+function StandingTiles({ record: r }: { record: RecordDetail }) {
+  const records = useRecords();
+  const currency = r.current_currency ?? "GBP";
+  const rank = records.data ? standing(records.data, r.id, currency) : null;
+  const paid = r.purchase_price_minor !== null && r.purchase_currency === r.current_currency && r.current_value_minor !== null;
+  const gain = paid ? r.current_value_minor! - r.purchase_price_minor! : null;
+  const yearly = annualisedReturn(r);
+  if (!rank && gain === null) return null;
+
+  const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10 > 3 ? 0 : n % 10]}`;
+  return (
+    <div className="tiles">
+      {rank ? (
+        <Tile
+          label="In the collection"
+          value={`${ordinal(rank.position)} of ${count(rank.of)} by value`}
+          detail={rank.of > 1 ? `Worth more than ${Math.round(rank.above * 100)}% of the priced records` : "The only priced record so far"}
+          to={collectionLink({ status: "priced", sort: "value", dir: "desc" })}
+        />
+      ) : null}
+      {gain !== null ? (
+        <Tile
+          label="Against what I paid"
+          value={<MoneyChange minor={gain} currency={currency} />}
+          detail={
+            yearly !== null
+              ? `${yearly >= 0 ? "+" : "−"}${Math.round(Math.abs(yearly) * 100)}% a year since ${r.purchased_on}`
+              : r.purchased_on
+                ? `Bought on ${r.purchased_on}; a yearly rate needs a month`
+                : "Add the date bought below for a yearly rate"
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -188,21 +237,46 @@ function GradeLadder({ record: r }: { record: RecordDetail }) {
 }
 
 function History({ record: r }: { record: RecordDetail }) {
-  const points = [...r.valuations].reverse().map((v) => ({ t: Date.parse(v.valued_at), value: v.value_minor, hollow: v.source === "regrade", v }));
-  const currency = r.current_currency ?? points[0]?.v.currency ?? "GBP";
+  const [params, setParams] = useSearchParams();
+  const range = readRange(params);
+  const since = Date.now() - range.days * 86_400_000;
+  const all = [...r.valuations].reverse().map((v) => ({ t: Date.parse(v.valued_at), value: v.value_minor, hollow: v.source === "regrade", v }));
+  const points = all.filter((p) => p.t >= since);
+  const currency = r.current_currency ?? all[0]?.v.currency ?? "GBP";
+  const cheapest = points.filter((p) => p.v.lowest_listing_minor !== null).map((p) => ({ t: p.t, value: p.v.lowest_listing_minor! }));
   return (
     <div className="card">
-      <h2 className="card-title">Price history</h2>
-      {points.length === 0 ? (
+      <div className="row-between">
+        <h2 className="card-title">Price history</h2>
+        {all.length > 0 ? (
+          <div className="segmented" role="group" aria-label="Time range">
+            {RANGES.map((o) => (
+              <button key={o.value} type="button" aria-pressed={o === range} onClick={() => setParams((prev) => withRange(prev, o), { replace: true })}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {all.length === 0 ? (
         <p className="muted">No prices yet.</p>
+      ) : points.length === 0 ? (
+        <p className="muted">No prices in the last {range.period}. The last was {dateTime(all[all.length - 1]!.v.valued_at)}.</p>
       ) : (
         <>
           <LineChart
             points={points}
-            label={`Value of ${r.title} over time, ${count(points.length)} prices`}
+            label={`Value of ${r.title} over the last ${range.period}, ${count(points.length)} prices`}
+            seriesLabel="Value"
+            secondary={cheapest.length > 0 ? { points: cheapest, label: "Cheapest copy for sale, any grade" } : undefined}
             formatValue={(v) => formatMinor(v, currency)}
             formatTime={(t) => dateTime(new Date(t).toISOString())}
-            describe={(p) => <span>{describe(p.v)}</span>}
+            describe={(p) => (
+              <span>
+                {describe(p.v)}
+                {p.v.lowest_listing_minor !== null ? ` · cheapest ${formatMinor(p.v.lowest_listing_minor, p.v.currency)}` : ""}
+              </span>
+            )}
           />
           {points.some((p) => p.hollow) ? <p className="muted small">Hollow points are prices worked out from a grade change.</p> : null}
           <details className="history-table">

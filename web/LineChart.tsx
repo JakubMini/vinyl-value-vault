@@ -4,7 +4,8 @@
  * Quiet by design: hairline gridlines, a 2px line, a 10% area wash down to zero, and the latest
  * value labelled at the end of the line. A crosshair snaps to the nearest point on hover, and
  * the arrow keys walk the points when the chart has focus. Every number is also in a table on
- * the same page, so the tooltip never holds information hostage.
+ * the same page, so the tooltip never holds information hostage. A second series, for context
+ * rather than the point, is drawn dashed in grey on the same scale, with a legend.
  */
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,6 +24,10 @@ interface Props<P extends ChartPoint> {
   formatTime: (t: number) => string;
   /** Extra lines for the tooltip, under the value and the date. */
   describe?: (point: P) => ReactNode;
+  /** A second series on the same scale, drawn dashed and grey: context for the first, never the point. */
+  secondary?: { points: ChartPoint[]; label: string };
+  /** What the first series is called in the legend, shown only when there is a second. */
+  seriesLabel?: string;
   height?: number;
 }
 
@@ -64,7 +69,7 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
   return [ref, width];
 }
 
-export function LineChart<P extends ChartPoint>({ points, label, formatValue, formatTime, describe, height = 240 }: Props<P>) {
+export function LineChart<P extends ChartPoint>({ points, label, formatValue, formatTime, describe, secondary, seriesLabel = "Value", height = 240 }: Props<P>) {
   const [containerRef, width] = useWidth<HTMLDivElement>();
   const [active, setActive] = useState<number | null>(null);
 
@@ -76,12 +81,17 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
     const last = points[points.length - 1]!.t;
     // A single point sits in the middle of a day-wide window.
     const [t0, t1] = first === last ? [first - 43_200_000, last + 43_200_000] : [first, last];
-    const ticks = niceTicks(Math.max(...points.map((p) => p.value)));
+    // The second series shares the scale but never sets the time window: it is context inside the first.
+    const second = (secondary?.points ?? []).filter((p) => p.t >= t0 && p.t <= t1);
+    const ticks = niceTicks(Math.max(...points.map((p) => p.value), ...second.map((p) => p.value)));
     const yMax = ticks[ticks.length - 1]!;
     const x = (t: number) => MARGIN.left + ((t - t0) / (t1 - t0)) * innerW;
     const y = (v: number) => MARGIN.top + innerH - (v / yMax) * innerH;
+    const path = (cs: { x: number; y: number }[]) => cs.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join("");
     const coords = points.map((p) => ({ x: x(p.t), y: y(p.value) }));
-    const line = coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join("");
+    const line = path(coords);
+    const secondLine = second.length > 1 ? path(second.map((p) => ({ x: x(p.t), y: y(p.value) }))) : null;
+    const secondDot = second.length === 1 ? { x: x(second[0]!.t), y: y(second[0]!.value) } : null;
     const base = y(0);
     const area = `${line}L${coords[coords.length - 1]!.x.toFixed(1)},${base}L${coords[0]!.x.toFixed(1)},${base}Z`;
     const format = tickFormat(t1 - t0);
@@ -90,8 +100,8 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
     const timeTicks = candidates
       .map((t) => ({ t, text: format(t) }))
       .filter((tick, i, all) => i === 0 || tick.text !== all[i - 1]!.text);
-    return { innerW, innerH, ticks, y, x, coords, line, area, timeTicks, base };
-  }, [points, width, height]);
+    return { innerW, innerH, ticks, y, x, coords, line, area, timeTicks, base, secondLine, secondDot };
+  }, [points, secondary, width, height]);
 
   function nearest(clientX: number, rect: DOMRect): number {
     if (!geometry) return 0;
@@ -146,6 +156,8 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
             );
           })}
           <path className="chart-area" d={geometry.area} />
+          {geometry.secondLine ? <path className="chart-line-secondary" d={geometry.secondLine} /> : null}
+          {geometry.secondDot ? <circle className="chart-dot-secondary" cx={geometry.secondDot.x} cy={geometry.secondDot.y} r={3} /> : null}
           <path className="chart-line" d={geometry.line} />
           {points.map((p, i) =>
             p.hollow ? <circle key={i} className="chart-dot chart-dot-hollow" cx={geometry.coords[i]!.x} cy={geometry.coords[i]!.y} r={4} /> : null,
@@ -164,6 +176,22 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
       ) : (
         <div style={{ height }} />
       )}
+      {secondary ? (
+        <div className="chart-legend" aria-label="Series">
+          <span>
+            <svg width="22" height="8" aria-hidden="true">
+              <line className="chart-line" x1="1" x2="21" y1="4" y2="4" />
+            </svg>
+            {seriesLabel}
+          </span>
+          <span>
+            <svg width="22" height="8" aria-hidden="true">
+              <line className="chart-line-secondary" x1="1" x2="21" y1="4" y2="4" />
+            </svg>
+            {secondary.label}
+          </span>
+        </div>
+      ) : null}
       {point && coord ? (
         <div
           className="chart-tooltip"

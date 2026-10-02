@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { breakdown, concentration, growth, market, moves, valueBands } from "../src/insights";
+import { annualisedReturn, breakdown, concentration, growth, market, moves, standing, valueBands } from "../src/insights";
 import { listedRecord } from "./helpers";
 
 const gbp = (id: number, minor: number | null, rest: Parameters<typeof listedRecord>[0] = {}) =>
@@ -124,5 +124,30 @@ describe("how the collection grew", () => {
       { t: Date.parse("2023-12-24T00:00:00.000Z"), count: 1, added: 1 },
       { t: Date.parse("2024-03-02T00:00:00.000Z"), count: 3, added: 2 },
     ]);
+  });
+});
+
+describe("one record against the rest", () => {
+  const rows = [gbp(1, 500), gbp(2, 1000), gbp(3, 1000), gbp(4, 4000), gbp(5, null), gbp(6, 9000, { discogs_removed_at: "2026-01-01T00:00:00.000Z" })];
+
+  it("ranks it by value among the priced records still in the collection", () => {
+    expect(standing(rows, 4, "GBP")).toEqual({ position: 1, of: 4, above: 1 });
+    expect(standing(rows, 2, "GBP")).toEqual({ position: 2, of: 4, above: 1 / 3 });
+    expect(standing(rows, 1, "GBP")).toEqual({ position: 4, of: 4, above: 0 });
+    expect(standing(rows, 5, "GBP")).toBeNull();
+    expect(standing([gbp(1, 500)], 1, "GBP")).toEqual({ position: 1, of: 1, above: 0 });
+  });
+
+  it("annualises the gain on what was paid, once it has been held a month", () => {
+    const now = Date.parse("2026-10-02T00:00:00.000Z");
+    const bought = (on: string, paid: number, worth: number, currency = "GBP") =>
+      annualisedReturn({ purchase_price_minor: paid, purchase_currency: currency, purchased_on: on, current_value_minor: worth, current_currency: "GBP" }, now);
+    expect(bought("2025-10-02", 1000, 1200)).toBeCloseTo(0.2, 5);
+    expect(bought("2024-10-02", 1000, 1440)).toBeCloseTo(0.2, 2);
+    expect(bought("2025-10-02", 1000, 800)).toBeCloseTo(-0.2, 5);
+    expect(bought("2026-09-20", 1000, 2000)).toBeNull();
+    expect(bought("2025-10-02", 1000, 1200, "USD")).toBeNull();
+    expect(bought("", 1000, 1200)).toBeNull();
+    expect(bought("2025-10-02", 0, 1200)).toBeNull();
   });
 });

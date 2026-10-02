@@ -278,3 +278,41 @@ export function growth(records: readonly ListedRecord[]): GrowthPoint[] {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([day, added]) => ({ t: Date.parse(`${day}T00:00:00.000Z`), count: (running += added), added }));
 }
+
+export interface Standing {
+  /** 1 for the most valuable. */
+  position: number;
+  /** How many priced records it stands among. */
+  of: number;
+  /** The share of the others it is worth more than, 0 to 1. */
+  above: number;
+}
+
+/** Where one record stands among the priced records of the collection, by value. Null when it, or nothing, is priced. */
+export function standing(records: readonly ListedRecord[], id: number, currency: string): Standing | null {
+  const priced = records.filter((r) => r.current_value_minor !== null && r.current_currency === currency && r.discogs_removed_at === null);
+  const me = priced.find((r) => r.id === id);
+  if (!me) return null;
+  const value = me.current_value_minor!;
+  const higher = priced.filter((r) => r.current_value_minor! > value).length;
+  const lower = priced.filter((r) => r.current_value_minor! < value).length;
+  return { position: higher + 1, of: priced.length, above: priced.length > 1 ? lower / (priced.length - 1) : 0 };
+}
+
+/** A day is close enough to be worth annualising. Shorter, and the yearly rate says nothing. */
+const ANNUALISE_AFTER_DAYS = 30;
+
+/**
+ * What a purchase has returned per year, compounded: 0.12 for 12% a year. Null without a
+ * price paid in the same currency, without a purchase date, or when the record has been held
+ * for less than a month, when a yearly rate would only mislead.
+ */
+export function annualisedReturn(r: Pick<ListedRecord, "purchase_price_minor" | "purchase_currency" | "purchased_on" | "current_value_minor" | "current_currency">, now = Date.now()): number | null {
+  if (r.purchase_price_minor === null || r.purchase_price_minor <= 0 || r.current_value_minor === null) return null;
+  if (r.purchase_currency !== r.current_currency || !r.purchased_on) return null;
+  const bought = Date.parse(`${r.purchased_on}T00:00:00.000Z`);
+  if (!Number.isFinite(bought)) return null;
+  const days = (now - bought) / 86_400_000;
+  if (days < ANNUALISE_AFTER_DAYS) return null;
+  return (r.current_value_minor / r.purchase_price_minor) ** (365 / days) - 1;
+}
