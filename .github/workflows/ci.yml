@@ -19,5 +19,7 @@ jobs:
       - run: npm run types
       - run: npm run typecheck
       - run: npm test
-      - name: Validate the Worker bundles and the config is deployable
+      - name: Build the dashboard and the Worker
+        run: npm run build
+      - name: Validate the build is deployable
         run: npx wrangler deploy --dry-run

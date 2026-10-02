@@ -11,6 +11,7 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 
 import { AccessUnavailable, verifyAccessJwt } from "./access";
+import type { ApiRecord, CollectionResponse, SyncRun } from "./api-types";
 import {
   type RecordInput,
   type RecordRow,
@@ -83,7 +84,7 @@ function validate<U extends "json" | "query", S extends z.ZodType>(target: U, sc
   });
 }
 
-function presentRecord(row: RecordRow) {
+function presentRecord(row: RecordRow): ApiRecord {
   return {
     ...row,
     current_value:
@@ -93,7 +94,7 @@ function presentRecord(row: RecordRow) {
   };
 }
 
-function presentSyncRun(run: SyncRunRow) {
+function presentSyncRun(run: SyncRunRow): SyncRun {
   return { ...run, dry_run: run.dry_run === 1 };
 }
 
@@ -155,7 +156,7 @@ app.get("/collection", async (c) => {
     unpriced_count: summary.record_count - summary.valued_count,
     last_valued_at: summary.last_valued_at,
     history,
-  });
+  } satisfies CollectionResponse);
 });
 
 app.get("/records", validate("query", pageSchema), async (c) => {

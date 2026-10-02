@@ -41,14 +41,17 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 
 - TypeScript in strict mode on Cloudflare Workers. Hono for HTTP, Zod for validation, D1 (SQLite)
   for storage, Cron Triggers for the valuation job and the daily collection sync, Vitest running
-  inside workerd for tests.
+  inside workerd for tests. The dashboard is React built by Vite (`@cloudflare/vite-plugin`) and
+  served by the same Worker as static assets.
 - Money is stored as integers in minor units (pence). Times are ISO-8601 UTC strings. Condition
   grades use the Goldmine scale: M, NM, VG+, VG, G+, G, F, P.
 - Where things live: SQL only in `src/db.ts`; routes in `src/app.ts`; Discogs calls in
   `src/discogs.ts`; Discogs-to-record mapping in `src/release.ts`; the valuation job in
   `src/valuation.ts`; the Discogs collection sync in `src/sync.ts`; Cloudflare Access token checks in
   `src/access.ts`; the Worker entry in
-  `src/index.ts`; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
+  `src/index.ts`; the dashboard in `web/` (with `index.html` at the root and static files in
+  `public/`), sharing response types through `src/api-types.ts`, which must stay free of Worker
+  types; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
 - Discogs owns what a pressing is (artist, title, label, year, format, artwork); the vault owns
   what is said about the copy (grades, notes, purchase details). A sync only ever writes the
   former to existing records. Keep it that way.
@@ -76,11 +79,12 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 
 | Command | What it does |
 | --- | --- |
-| `npm run dev` | Local Worker with a local D1. `curl localhost:8787/__scheduled` runs the cron handler. |
+| `npm run dev` | Vite: the dashboard at localhost:5173 plus the Worker with a local D1. The dashboard needs `VITE_DEV_API_KEY` in `.env.development.local`. `curl localhost:5173/cdn-cgi/local/scheduled` runs the cron handler. |
+| `npm run build` | Build the dashboard and the Worker into `dist/`. Plain `wrangler dev` / `wrangler deploy` need this first. |
 | `npm run check` | Regenerate types, typecheck, run tests. Run before every push. |
 | `npm test` | Tests only. |
 | `npm run db:migrate:local` / `db:migrate:remote` | Apply migrations locally / in production. |
-| `npm run deploy` | Deploy to Cloudflare. |
+| `npm run deploy` | Build, then deploy to Cloudflare. |
 
 The Discogs collection syncs itself once a day. To sync now, `POST /api/sync/discogs` (add
 `?dry_run=true` to preview); see the README.
