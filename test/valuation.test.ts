@@ -259,6 +259,36 @@ describe("the scheduled valuation job", () => {
   });
 });
 
+describe("queueing records for a fresh price", () => {
+  it("puts them ahead of the rest, even when priced recently, leaving out any the job cannot price", async () => {
+    const now = new Date("2026-10-02T12:00:00.000Z");
+    const recently = "2026-10-02T11:00:00.000Z";
+    const asked = await seedRecord({ artist: "A", title: "Asked for", discogs_release_id: 1001, last_valued_at: recently });
+    await seedRecord({ artist: "B", title: "Not asked for", discogs_release_id: 1002, last_valued_at: recently });
+    const noDiscogs = await seedRecord({ artist: "C", title: "No Discogs id" });
+    const gone = await seedRecord({ artist: "D", title: "Gone from Discogs", discogs_release_id: 1004, last_valued_at: recently });
+    await env.DB.prepare("UPDATE records SET discogs_removed_at = ? WHERE id = ?").bind(recently, gone.id).run();
+
+    // More ids than D1 allows bound parameters in one query, most of them unknown, one repeated.
+    const ids = [asked.id, asked.id, noDiscogs.id, gone.id, ...Array.from({ length: 150 }, (_, i) => 100_000 + i)];
+    const res = await api("/valuations/queue", { method: "POST", json: { ids } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ queued: 1 });
+
+    // Only the queued record is due; the others are left alone, so only it is asked about.
+    mockStats(1001, { lowest_price: gbp(10), num_for_sale: 1, blocked_from_sale: false });
+    mockSuggestions(1001, { "Very Good Plus (VG+)": gbp(12) });
+    expect(await runValuationBatch(env, { now })).toMatchObject({ considered: 1, valued: 1 });
+    const row = await env.DB.prepare("SELECT current_value_minor, last_valued_at FROM records WHERE id = ?").bind(asked.id).first();
+    expect(row).toEqual({ current_value_minor: 1200, last_valued_at: now.toISOString() });
+  });
+
+  it("needs at least one record id", async () => {
+    expect((await api("/valuations/queue", { method: "POST", json: { ids: [] } })).status).toBe(400);
+    expect((await api("/valuations/queue", { method: "POST", json: {} })).status).toBe(400);
+  });
+});
+
 describe("the collection over time", () => {
   async function value(recordId: number, minor: number): Promise<void> {
     await env.DB.prepare("UPDATE records SET current_value_minor = ?, current_currency = 'GBP' WHERE id = ?").bind(minor, recordId).run();

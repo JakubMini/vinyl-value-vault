@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
@@ -6,7 +6,7 @@ import { GRADES, type Grade } from "../../src/grades";
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { count, formatMinor } from "../format";
-import { useRecords, useUpdateRecord } from "../queries";
+import { useQueueRevalue, useRecords, useUpdateRecord } from "../queries";
 
 type SortKey = "artist" | "title" | "year" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added";
 type Status = "collection" | "priced" | "waiting" | "problem" | "gone" | "all";
@@ -42,6 +42,11 @@ function compare(a: string | number | null, b: string | number | null): number {
   return (a as number) - (b as number);
 }
 
+/** Only a record with a Discogs release, still in the collection, can be priced. */
+function canPrice(r: ListedRecord): boolean {
+  return r.discogs_release_id !== null && r.discogs_removed_at === null;
+}
+
 function matchesStatus(r: ListedRecord, status: Status): boolean {
   const gone = r.discogs_removed_at !== null;
   switch (status) {
@@ -63,6 +68,8 @@ function matchesStatus(r: ListedRecord, status: Status): boolean {
 export function Collection() {
   const records = useRecords();
   const [params, setParams] = useSearchParams();
+  // Ticked records. Only the ones on screen count, so a filter never acts on rows you can't see.
+  const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
 
   const q = params.get("q") ?? "";
   const grade = (params.get("grade") ?? "") as Grade | "";
@@ -107,6 +114,18 @@ export function Collection() {
 
   if (records.isPending) return <Loading />;
   if (records.isError) return <ErrorState error={records.error} />;
+
+  const priceable = rows.filter(canPrice);
+  const selected = priceable.filter((r) => ticked.has(r.id));
+  const allTicked = priceable.length > 0 && selected.length === priceable.length;
+
+  function toggle(id: number) {
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
 
   const header = (key: SortKey, label: string, options: { numeric?: boolean; narrow?: boolean } = {}) => {
     const active = sort === key;
@@ -164,6 +183,8 @@ export function Collection() {
         </select>
       </div>
 
+      <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
+
       {rows.length === 0 ? (
         <p className="muted">No records match.</p>
       ) : (
@@ -171,6 +192,18 @@ export function Collection() {
           <table className="table records">
             <thead>
               <tr>
+                <th scope="col" className="check-col">
+                  <input
+                    type="checkbox"
+                    aria-label="Select every record shown"
+                    checked={allTicked}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selected.length > 0 && !allTicked;
+                    }}
+                    disabled={priceable.length === 0}
+                    onChange={() => setTicked(allTicked ? new Set() : new Set(priceable.map((r) => r.id)))}
+                  />
+                </th>
                 <th scope="col" className="cover-col">
                   <span className="sr-only">Cover</span>
                 </th>
@@ -186,7 +219,7 @@ export function Collection() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <RecordRow key={r.id} record={r} />
+                <RecordRow key={r.id} record={r} ticked={ticked.has(r.id)} onToggle={() => toggle(r.id)} />
               ))}
             </tbody>
           </table>
@@ -196,10 +229,57 @@ export function Collection() {
   );
 }
 
-function RecordRow({ record: r }: { record: ListedRecord }) {
+/**
+ * Re-price the ticked records, or every one shown when none is ticked. They join the front of the
+ * valuation queue, with any record not yet priced; the job prices them a batch at a time and the
+ * table refreshes as they arrive.
+ */
+function RevalueBar({ shown, selected, onClear }: { shown: ListedRecord[]; selected: ListedRecord[]; onClear: () => void }) {
+  const queue = useQueueRevalue();
+  const targets = selected.length > 0 ? selected : shown;
+  const label = selected.length > 0 ? `Revalue ${count(selected.length)} selected` : `Revalue all ${count(shown.length)}`;
+
+  return (
+    <div className="actions bulk">
+      <button
+        type="button"
+        className="button"
+        disabled={targets.length === 0 || queue.isPending}
+        onClick={() => queue.mutate(targets.map((r) => r.id), { onSuccess: onClear })}
+      >
+        {queue.isPending ? "Queueing…" : label}
+      </button>
+      {selected.length > 0 ? (
+        <button type="button" className="button" onClick={onClear}>
+          Clear selection
+        </button>
+      ) : null}
+      {queue.isSuccess ? (
+        <p className="muted small" role="status">
+          {queue.data.queued === 0
+            ? "Nothing to queue: none of those can be priced."
+            : `Queued ${count(queue.data.queued)} for a fresh price from Discogs. The valuation job takes queued records first, a few at a time, and the Priced column fills in as they arrive.`}
+        </p>
+      ) : null}
+      {queue.isError ? <ErrorState error={queue.error} /> : null}
+    </div>
+  );
+}
+
+function RecordRow({ record: r, ticked, onToggle }: { record: ListedRecord; ticked: boolean; onToggle: () => void }) {
   const update = useUpdateRecord();
   return (
     <tr className={r.discogs_removed_at ? "gone" : undefined}>
+      <td className="check-col">
+        <input
+          type="checkbox"
+          aria-label={`Select ${r.title}`}
+          checked={ticked}
+          disabled={!canPrice(r)}
+          title={canPrice(r) ? undefined : "Only records on Discogs, still in the collection, can be priced"}
+          onChange={onToggle}
+        />
+      </td>
       <td className="cover-col">
         {r.thumb_url ? <img src={r.thumb_url} alt="" width={40} height={40} loading="lazy" className="thumb" /> : <span className="thumb thumb-empty" />}
       </td>
@@ -254,7 +334,7 @@ function RecordRow({ record: r }: { record: ListedRecord }) {
         ) : r.last_valued_at ? (
           <When iso={r.last_valued_at} />
         ) : (
-          <span className="muted">{r.current_value_minor !== null ? "Re-pricing" : "Waiting"}</span>
+          <span className="muted">{r.current_value_minor !== null ? "Queued" : "Waiting"}</span>
         )}
       </td>
     </tr>

@@ -95,7 +95,7 @@ function ValueCard({ record: r }: { record: RecordDetail }) {
             Priced <When iso={r.last_valued_at} />.
           </>
         ) : r.current_value ? (
-          "Being re-priced after a grade change."
+          "Queued for a fresh price."
         ) : (
           "Waiting for its first price."
         )}
