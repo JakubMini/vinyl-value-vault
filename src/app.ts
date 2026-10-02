@@ -11,7 +11,7 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 
 import { AccessUnavailable, verifyAccessJwt } from "./access";
-import type { ApiRecord, CollectionResponse, ListedRecord, RecordDetail, RecordsPage, SyncRun } from "./api-types";
+import type { ApiRecord, CollectionResponse, ListedRecord, QueueResponse, RecordDetail, RecordsPage, SyncRun } from "./api-types";
 import {
   type ListedRecordRow,
   type RecordInput,
@@ -27,6 +27,7 @@ import {
   listSnapshots,
   listSyncRuns,
   listValuations,
+  queueForValuation,
   updateRecord,
 } from "./db";
 import { DiscogsError } from "./discogs";
@@ -73,6 +74,8 @@ const createRecordSchema = recordFields
   });
 
 const patchRecordSchema = recordFields.partial().refine((b) => Object.keys(b).length > 0, { message: "Nothing to update" });
+
+const queueSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(1000) });
 
 const pageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -306,6 +309,14 @@ app.post("/valuations/run", async (c) => {
   const limit = Number(c.req.query("limit"));
   const summary = await runValuationBatch(c.env, Number.isInteger(limit) && limit > 0 ? { limit } : {});
   return c.json(summary);
+});
+
+// Queue records for a fresh price. Nothing is priced here: the valuation job takes them first,
+// a batch at a time, so re-pricing the whole collection never makes more Discogs calls in one
+// run than usual.
+app.post("/valuations/queue", validate("json", queueSchema), async (c) => {
+  const queued = await queueForValuation(c.env.DB, [...new Set(c.req.valid("json").ids)]);
+  return c.json({ queued } satisfies QueueResponse);
 });
 
 app.get("/snapshots", validate("query", pageSchema), async (c) => {

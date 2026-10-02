@@ -479,6 +479,32 @@ th[aria-sort="descending"] {
   padding-right: 0 !important;
 }
 
+.check-col {
+  width: 28px;
+  padding-right: 0 !important;
+}
+
+.check-col input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.check-col input:disabled {
+  cursor: not-allowed;
+}
+
+.bulk {
+  align-items: center;
+}
+
+.bulk [role="status"] {
+  margin: 0;
+  flex: 1 1 280px;
+}
+
 .thumb {
   display: block;
   width: 40px;
@@ -551,10 +577,11 @@ th[aria-sort="descending"] {
     display: none;
   }
 
+  /* Narrow enough to leave room for the tick box, the cover, the grade and the value. */
   .record-cell,
   .record-sub {
     min-width: 0;
-    max-width: 38vw;
+    max-width: 30vw;
   }
 
   .table th,

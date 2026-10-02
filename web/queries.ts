@@ -1,7 +1,7 @@
 /** Every request the dashboard makes, as TanStack Query hooks, so caching and refetching live in one place. */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ApiRecord, CollectionResponse, ListedRecord, RecordDetail, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
+import type { ApiRecord, CollectionResponse, ListedRecord, QueueResponse, RecordDetail, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
 import { ApiError, api } from "./api";
 
 export const keys = {
@@ -19,11 +19,30 @@ export function useCollection(days = 30) {
   });
 }
 
-/** The whole collection in one request; the table sorts and filters it in the browser. */
+/** Waiting in the valuation queue: a record the job can price that has no price time. */
+export function isQueued(r: ListedRecord): boolean {
+  return r.last_valued_at === null && r.discogs_release_id !== null && r.discogs_removed_at === null;
+}
+
+/**
+ * The whole collection in one request; the table sorts and filters it in the browser. While
+ * records are queued it refreshes once a minute, so prices appear as the job reaches them
+ * (only while the tab is in view: a list costs about three D1 rows read per record).
+ */
 export function useRecords() {
   return useQuery({
     queryKey: keys.records,
     queryFn: () => api<RecordsPage>("/records?limit=1000").then((r) => r.records),
+    refetchInterval: (query) => (query.state.data?.some(isQueued) ? 60_000 : false),
+  });
+}
+
+/** Send records to the front of the valuation queue. The job prices them a batch at a time. */
+export function useQueueRevalue() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => api<QueueResponse>("/valuations/queue", { method: "POST", json: { ids } }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.records }),
   });
 }
 

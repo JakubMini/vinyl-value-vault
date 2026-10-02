@@ -62,6 +62,12 @@ export interface ValuationPoint {
   media_condition: Grade | null;
 }
 
+/** The answer to queueing records for a fresh price. */
+export interface QueueResponse {
+  /** How many went to the front of the queue. Records without a Discogs release, or gone from the collection, are left out. */
+  queued: number;
+}
+
 /**
  * Whether the latest price from Discogs had a price suggestion to go on, and if not, why not.
  *

@@ -12,7 +12,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes up to 15 records whose price is more than a day old and asks Discogs what they are worth today, by way of my laptop. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. It shows what the collection is worth and how that has moved over 30 days, 90 days, a year or all time, the records that have risen or fallen most, and the gain on what I paid. It lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, re-price the records I tick (or all of them), and runs or previews a sync with Discogs. Each record has its own page: its price history as a chart and a table, Discogs' price at every grade, and what I paid and when.
 - **Plays it.** A record can be pinned to its album on Spotify by pasting the album's link; its page then plays it in Spotify's embedded player, and the table links straight to it. Unpinned records get a Spotify search link. There is no Spotify API involved: since February 2026 Spotify only gives API access to hobby apps run from a Premium account, and a pasted link is all a personal collection needs.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
@@ -55,6 +55,8 @@ The Discogs website also shows the lowest, median and highest price of recent sa
 
 Changing a record's grade re-prices it at once, without calling Discogs: every stored valuation keeps Discogs' suggestions for all eight grades, so the new value is read from the latest one and recorded as a regrade. The record then goes to the front of the queue, and the next run confirms the price with fresh data. When the price came from the cheapest listing, which does not depend on grade, the value stays as it is.
 
+Re-pricing on request works through the same queue. Ticking records in the collection table (or none, for every record shown) and choosing Revalue sends them to the front, alongside records not yet priced. Nothing is priced in that request: 163 records would mean over 300 Discogs calls, far past the 50 a Worker may make in one invocation. The valuation job takes them a batch at a time, and the table refreshes once a minute until they are done.
+
 ### Staying in step with the Discogs collection
 
 My records are catalogued on Discogs, so that is where the collection lives. The vault syncs with it rather than asking me to enter anything twice.
@@ -82,7 +84,7 @@ So the vault's Discogs calls take another road, from an address of their own: se
 
 On the tunnel road that is up to 21,600 record prices a day, and the whole collection takes 11 minutes. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
 
-The database has a budget too: the free plan allows 5 million D1 rows read a day. The dashboard is built to stay far inside it. The collection list reads about three rows per record, using indexes, and the value chart reads one row per day from a small daily table rather than every snapshot the job writes.
+The database has a budget too: the free plan allows 5 million D1 rows read a day. The dashboard is built to stay far inside it. The collection list reads about three rows per record, using indexes (once a minute while records are queued for a price, and only while the page is in view), and the value chart reads one row per day from a small daily table rather than every snapshot the job writes.
 
 Expected running cost at this scale: nothing. Cloudflare Tunnel is free, and Workers VPC is free on every plan while it is in beta.
 
@@ -188,6 +190,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
 | `POST /api/valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
+| `POST /api/valuations/queue` | Send records to the front of the valuation queue, even if they were priced recently: `{"ids": [1, 2, 3]}`, up to 1,000. Records without a Discogs release, or gone from the collection, are left out. Answers how many were queued. |
 | `GET /api/snapshots?limit=` | The collection total over time. |
 | `POST /api/sync/discogs` | Sync with the Discogs collection now. `?dry_run=true` reports what would change without writing; `?force_removals=true` confirms a large removal. Answers 502 if Discogs refused. |
 | `GET /api/sync/runs?limit=` | Recent syncs, newest first. |

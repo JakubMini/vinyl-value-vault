@@ -242,6 +242,25 @@ export async function regradeRecord(
   return updated?.results[0] ?? null;
 }
 
+/**
+ * Send records to the front of the valuation queue, as a regrade does: the job takes records
+ * with no price time first. Only records the job can price are queued: those with a Discogs
+ * release that are still in the collection. Returns how many were queued. The ids travel as one
+ * JSON array, because D1 allows only 100 bound parameters in a query.
+ */
+export async function queueForValuation(db: D1Database, ids: number[]): Promise<number> {
+  const result = await db
+    .prepare(
+      `UPDATE records SET last_valued_at = NULL
+       WHERE id IN (SELECT value FROM json_each(?))
+         AND discogs_release_id IS NOT NULL
+         AND discogs_removed_at IS NULL`,
+    )
+    .bind(JSON.stringify(ids))
+    .run();
+  return result.meta.changes ?? 0;
+}
+
 /** Delete a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. */
 export async function deleteRecord(db: D1Database, id: number, now: string): Promise<boolean> {
   const [, deleted] = await db.batch([
