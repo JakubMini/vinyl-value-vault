@@ -8,7 +8,7 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 
 ## What it does
 
-- **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs.
+- **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs. A whole Discogs collection can be imported in one command, and re-running it only adds what is new.
 - **Keeps the prices fresh.** Every five minutes a scheduled job takes the records that have gone longest without a price and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Exposes a small JSON API** so a dashboard, a script, or a voice assistant can add records and ask about them.
@@ -65,11 +65,11 @@ Three tables. Money is stored as integers in minor units (pence) so there is no 
 
 | Table | One row per | Notes |
 | --- | --- | --- |
-| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. |
+| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Imported records remember their Discogs collection item, which is unique, so an import can never duplicate a record. |
 | `valuations` | price fetched for a record | Append-only history, with the method used and the raw Discogs payload for re-deriving later. |
 | `collection_snapshots` | valuation run that changed something | The collection total over time, ready to chart. |
 
-The schema is in [`migrations/0001_init.sql`](migrations/0001_init.sql).
+The schema is in [`migrations/`](migrations/), one numbered file per change.
 
 ## API
 
@@ -80,7 +80,7 @@ Every route except `/health` requires `Authorization: Bearer <API_KEY>`. Respons
 | `GET /health` | Liveness check. No key needed. |
 | `GET /collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
 | `GET /records?limit=&offset=` | The collection, alphabetical. |
-| `POST /records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id. |
+| `POST /records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /records/:id` | One record with its valuation history. |
 | `PATCH /records/:id` | Change any field a client may set. |
 | `DELETE /records/:id` | Remove a record and its history. |
@@ -141,6 +141,17 @@ Checks before pushing:
 npm run check      # regenerate binding types, typecheck, run the tests
 ```
 
+## Importing a Discogs collection
+
+```bash
+npm run import:discogs -- --dry-run     # show what would be imported
+npm run import:discogs                  # import into the live vault
+```
+
+The script reads `DISCOGS_TOKEN` and `API_KEY` from `.dev.vars`. It finds the Discogs account behind the token, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
+
+Records are created with `?value=false`. Pricing a few hundred records at once would mean a burst of Discogs calls from the Worker; instead the cron prices them 20 at a time over the next hour or so. Each record stores the Discogs collection item it came from, so the import can be re-run whenever the collection grows.
+
 ## Deploying
 
 This is what the first deploy looked like, on the free plan:
@@ -171,11 +182,13 @@ src/
   index.ts       Worker entry: fetch -> the API, scheduled -> the valuation job
   app.ts         HTTP routes, validation, authentication
   valuation.ts   the job: pick stale records, price them, snapshot the total
-  discogs.ts     Discogs API client and release-to-record mapping
+  discogs.ts     Discogs API client
+  release.ts     Discogs release and collection item -> record mapping
   db.ts          every SQL statement, typed
   grades.ts      Goldmine grades and their Discogs labels
   money.ts       minor-unit helpers
 migrations/      D1 schema, numbered and append-only
+scripts/         one-off tools run from a laptop, such as the Discogs import
 test/            Vitest suites running inside workerd
 wrangler.jsonc   Worker config: bindings, vars, cron
 ```

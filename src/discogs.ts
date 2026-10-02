@@ -9,6 +9,9 @@
  * descriptive User-Agent. The client reads the rate-limit headers so the caller
  * can stop before hitting the ceiling.
  */
+import type { Release } from "./release";
+
+export type { Release } from "./release";
 
 export interface DiscogsPrice {
   currency: string;
@@ -23,16 +26,6 @@ export interface MarketplaceStats {
 
 /** Keyed by Discogs condition label, e.g. "Very Good Plus (VG+)". Empty when Discogs has no data. */
 export type PriceSuggestions = Record<string, DiscogsPrice>;
-
-export interface Release {
-  id: number;
-  title: string;
-  year?: number;
-  country?: string;
-  artists?: { name: string; anv?: string; join?: string }[];
-  labels?: { name: string; catno?: string }[];
-  formats?: { name: string; qty?: string; descriptions?: string[] }[];
-}
 
 export class DiscogsError extends Error {
   constructor(
@@ -98,45 +91,4 @@ export class DiscogsClient {
     if (!response.ok) throw new DiscogsError(response.status, `Discogs ${response.status} for ${url.pathname}`);
     return (await response.json()) as T;
   }
-}
-
-/** Turn a Discogs release into the fields a record needs, so adding by id is enough. */
-export function releaseToRecordFields(release: Release): {
-  artist: string;
-  title: string;
-  label?: string;
-  catalogue_number?: string;
-  year?: number;
-  country?: string;
-  format?: string;
-} {
-  const artist =
-    (release.artists ?? [])
-      .map((a) => {
-        // Discogs disambiguates duplicate names with a suffix like "Nirvana (2)".
-        const name = (a.anv || a.name).replace(/\s\(\d+\)$/, "");
-        return a.join && a.join !== "" ? `${name} ${a.join} ` : name;
-      })
-      .join("")
-      .trim() || "Unknown artist";
-
-  const label = release.labels?.[0];
-  const format = release.formats?.[0];
-  const qty = Number(format?.qty ?? "1");
-  const formatText = format
-    ? [qty > 1 ? `${qty}x` : "", format.name === "Vinyl" ? "" : format.name, ...(format.descriptions ?? [])]
-        .filter(Boolean)
-        .join(", ")
-        .replace(/^(\d+x), /, "$1")
-    : undefined;
-
-  return {
-    artist,
-    title: release.title,
-    ...(label?.name ? { label: label.name } : {}),
-    ...(label?.catno && label.catno !== "none" ? { catalogue_number: label.catno } : {}),
-    ...(release.year ? { year: release.year } : {}),
-    ...(release.country ? { country: release.country } : {}),
-    ...(formatText ? { format: formatText } : {}),
-  };
 }

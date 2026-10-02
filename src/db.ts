@@ -4,6 +4,7 @@ import type { Grade } from "./grades";
 export interface RecordRow {
   id: number;
   discogs_release_id: number | null;
+  discogs_instance_id: number | null;
   artist: string;
   title: string;
   label: string | null;
@@ -57,6 +58,7 @@ export interface CollectionSummary {
 /** The columns a client may set. Everything else is derived. */
 export const EDITABLE_COLUMNS = [
   "discogs_release_id",
+  "discogs_instance_id",
   "artist",
   "title",
   "label",

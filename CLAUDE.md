@@ -31,7 +31,8 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 - Money is stored as integers in minor units (pence). Times are ISO-8601 UTC strings. Condition
   grades use the Goldmine scale: M, NM, VG+, VG, G+, G, F, P.
 - Where things live: SQL only in `src/db.ts`; routes in `src/app.ts`; Discogs calls in
-  `src/discogs.ts`; the job in `src/valuation.ts`; the Worker entry in `src/index.ts`.
+  `src/discogs.ts`; Discogs-to-record mapping in `src/release.ts`; the job in `src/valuation.ts`;
+  the Worker entry in `src/index.ts`; laptop-side tools in `scripts/`, run with Node directly.
 - Migrations in `migrations/` are append-only. Add a new numbered file; never edit one that may
   already have been applied anywhere.
 - Config lives in `wrangler.jsonc`. After changing bindings or vars run `npm run types`. The generated
@@ -58,3 +59,4 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 | `npm test` | Tests only. |
 | `npm run db:migrate:local` / `db:migrate:remote` | Apply migrations locally / in production. |
 | `npm run deploy` | Deploy to Cloudflare. |
+| `npm run import:discogs` | Import the Discogs collection into the live vault. Add `-- --dry-run` to preview. |

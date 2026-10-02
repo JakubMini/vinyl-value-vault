@@ -20,8 +20,9 @@ import {
   listValuations,
   updateRecord,
 } from "./db";
-import { DiscogsError, releaseToRecordFields } from "./discogs";
+import { DiscogsError } from "./discogs";
 import { GRADES } from "./grades";
+import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
 import { discogsFromEnv, runValuationBatch, valueRecord } from "./valuation";
 
@@ -29,6 +30,7 @@ const grade = z.enum(GRADES);
 
 const recordFields = z.object({
   discogs_release_id: z.number().int().positive().nullable(),
+  discogs_instance_id: z.number().int().positive().nullable(),
   artist: z.string().trim().min(1),
   title: z.string().trim().min(1),
   label: z.string().trim().nullable(),
@@ -126,8 +128,11 @@ app.get("/records", validate("query", pageSchema), async (c) => {
   return c.json({ records: records.map(presentRecord), total, limit, offset });
 });
 
+// ?value=false skips the immediate valuation; the cron prices the record later. Bulk imports use it
+// so a burst of new records does not become a burst of Discogs calls.
 app.post("/records", validate("json", createRecordSchema), async (c) => {
   const body = c.req.valid("json");
+  const valueNow = c.req.query("value") !== "false";
   const now = new Date().toISOString();
   const discogs = discogsFromEnv(c.env);
 
@@ -152,10 +157,18 @@ app.post("/records", validate("json", createRecordSchema), async (c) => {
     sleeve_condition: body.sleeve_condition ?? "VG+",
   };
 
-  let record = await insertRecord(c.env.DB, input, now);
+  let record: RecordRow;
+  try {
+    record = await insertRecord(c.env.DB, input, now);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      return c.json({ error: `Discogs collection item ${input.discogs_instance_id} is already in the vault` }, 409);
+    }
+    throw error;
+  }
 
   // Price it straight away so the caller sees a value. A failure is noted on the record, not fatal.
-  if (record.discogs_release_id !== null) {
+  if (valueNow && record.discogs_release_id !== null) {
     try {
       await valueRecord(c.env.DB, discogs, record, c.env.VALUATION_CURRENCY, now);
     } catch (error) {
