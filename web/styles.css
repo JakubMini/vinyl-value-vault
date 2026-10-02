@@ -1242,3 +1242,80 @@ a.bar-row:hover .bar-fill {
 .menu-option input {
   accent-color: var(--accent);
 }
+
+/* --- The cover wall --------------------------------------------------------------------- */
+
+.covers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px 12px;
+}
+.cover-link {
+  display: grid;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.cover-art {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--hover);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.cover-art img,
+.cover-empty-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cover-link:hover .cover-art {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.cover-value {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.66);
+}
+.cover-title {
+  font-weight: 550;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.cover-link:hover .cover-title {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cover-artist {
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cover-tile.gone .cover-art {
+  opacity: 0.55;
+}
+@media (max-width: 640px) {
+  .covers {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px 10px;
+  }
+}

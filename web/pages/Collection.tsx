@@ -8,16 +8,32 @@ import { applySelection, canPrice, facetOptions, isScarce, readSelection, SELECT
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { type ColumnKey, COLUMNS, loadColumns, saveColumns } from "../columns";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
+import { CoverGrid } from "../CoverGrid";
 import { Filters, QuickFilters } from "../Filters";
 import { count, formatMinor } from "../format";
 import { useQueueRevalue, useRecords, useUpdateRecord } from "../queries";
 import { over, readRange, withRange } from "../range";
 import { Totals } from "../Totals";
+import { readView, saveView, type View } from "../view";
 
 export function Collection() {
   const [params, setParams] = useSearchParams();
   const range = readRange(params);
+  const view = readView(params);
   const records = useRecords(range.days);
+
+  function chooseView(next: View) {
+    saveView(next);
+    setParams(
+      (prev) => {
+        const out = new URLSearchParams(prev);
+        if (next === "grid") out.set("view", "grid");
+        else out.delete("view");
+        return out;
+      },
+      { replace: true },
+    );
+  }
   // Ticked records. Only the ones on screen count, so a filter never acts on rows you can't see.
   const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
   const [columns, setColumns] = useState<ReadonlySet<ColumnKey>>(loadColumns);
@@ -123,6 +139,15 @@ export function Collection() {
       <div className="row-between">
         <RevalueBar shown={priceable} selected={selected} onClear={() => setTicked(new Set())} />
         <div className="actions">
+          <div className="segmented" role="group" aria-label="View">
+            <button type="button" aria-pressed={view === "table"} onClick={() => chooseView("table")}>
+              Table
+            </button>
+            <button type="button" aria-pressed={view === "grid"} onClick={() => chooseView("grid")}>
+              Covers
+            </button>
+          </div>
+          {view === "table" ? (
           <details className="menu">
             <summary className="button">Columns</summary>
             <div className="menu-panel">
@@ -134,6 +159,7 @@ export function Collection() {
               ))}
             </div>
           </details>
+          ) : null}
           <button type="button" className="button" disabled={rows.length === 0} onClick={exportCsv}>
             Export CSV
           </button>
@@ -142,6 +168,8 @@ export function Collection() {
 
       {rows.length === 0 ? (
         <p className="muted">No records match.</p>
+      ) : view === "grid" ? (
+        <CoverGrid rows={rows} />
       ) : (
         <div className="table-wrap">
           <table className="table records">
