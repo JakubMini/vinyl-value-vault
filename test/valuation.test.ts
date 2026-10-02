@@ -1,11 +1,9 @@
-import { createExecutionContext, createScheduledController, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { writeSnapshot } from "../src/db";
-import worker from "../src/index";
 import { runValuationBatch } from "../src/valuation";
-import { api, expectAllMocksUsed, markSyncedRecently, mockRelease, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
+import { api, cronTick, expectAllMocksUsed, markSyncedRecently, mockRelease, mockStats, mockSuggestions, resetDatabase, seedRecord } from "./helpers";
 
 const NEVERMIND = 249504;
 const DUMMY = 2371512;
@@ -117,9 +115,7 @@ describe("the scheduled valuation job", () => {
     mockStats(NEVERMIND, { lowest_price: gbp(18.5), num_for_sale: 42, blocked_from_sale: false });
     mockSuggestions(NEVERMIND, { "Very Good Plus (VG+)": gbp(25) });
 
-    const ctx = createExecutionContext();
-    await worker.scheduled(createScheduledController({ cron: "* * * * *" }), env, ctx);
-    await waitOnExecutionContext(ctx);
+    await cronTick();
 
     const collection = (await (await api("/collection")).json()) as { total_minor: number; valued_count: number; unpriced_count: number; daily: { total_minor: number }[] };
     expect(collection).toMatchObject({ total_minor: 4700, valued_count: 2, unpriced_count: 1 });
@@ -190,7 +186,7 @@ describe("the scheduled valuation job", () => {
     mockSuggestions(1001, {});
 
     const summary = await runValuationBatch(env);
-    expect(summary).toMatchObject({ considered: 2, valued: 1, stoppedEarly: true, reason: "Discogs rate limit nearly exhausted" });
+    expect(summary).toMatchObject({ considered: 2, valued: 1, stoppedEarly: true, reason: "Discogs rate limit nearly exhausted", rateLimitRemaining: 2 });
   });
 });
 

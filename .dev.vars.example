@@ -7,3 +7,8 @@ API_KEY=change-me
 # Discogs personal access token: https://www.discogs.com/settings/developers
 # Optional for lowest-listing prices; required for per-condition price suggestions.
 DISCOGS_TOKEN=
+
+# Which road Discogs calls take: "tunnel" (production, through a laptop's Cloudflare Tunnel) or
+# "pool". Leave it unset locally: the vault then makes plain fetches, which from your machine
+# reach Discogs from your own address. In production `npm run egress:here` / `egress:pool` set it.
+# DISCOGS_ROAD=
