@@ -67,9 +67,9 @@ function ValueCard({ record: r }: { record: RecordDetail }) {
   const revalue = useRevalue(r.id);
   const how =
     r.latest_method === "lowest_listing"
-      ? "The cheapest copy for sale on Discogs."
+      ? cheapest(r.valuations[0]?.num_for_sale ?? null)
       : r.latest_method === "price_suggestion"
-        ? `Discogs' suggested price for a ${r.media_condition} copy.`
+        ? `Discogs' suggested price for ${article(r.media_condition)} ${r.media_condition} copy, based on its sales history.`
         : null;
 
   let result: string | null = null;
@@ -117,6 +117,31 @@ function ValueCard({ record: r }: { record: RecordDetail }) {
   );
 }
 
+/** "an M", "an NM", "an F", but "a VG+": grades are read out letter by letter. */
+function article(grade: Grade): string {
+  return /^[MNF]/.test(grade) ? "an" : "a";
+}
+
+/** How a value taken from the cheapest listing is described: it is what a seller asks, not what a copy sold for. */
+function cheapest(forSale: number | null): string {
+  const which = forSale !== null && forSale > 1 ? `The cheapest of ${count(forSale)} copies` : forSale === 1 ? "The only copy" : "The cheapest copy";
+  return `${which} for sale on Discogs, in any grade: an asking price, not a sale.`;
+}
+
+/** Why there is no price at every grade, and what would change that. */
+function noLadder(r: RecordDetail, currency: string): string {
+  switch (r.suggestions) {
+    case null:
+      return "Shown once the record has a price.";
+    case "no_data":
+      return "Discogs has no suggested price for this release yet, because too few copies have sold. Until it does, the value is the cheapest copy for sale and does not change with the grade.";
+    case "wrong_currency":
+      return `Discogs is suggesting prices in a currency other than ${currency}, so the value is the cheapest copy for sale. Set the selling currency in your Discogs seller settings to ${currency}.`;
+    default:
+      return "Discogs is not giving this account price suggestions, so the value is the cheapest copy for sale and does not change with the grade. Filling in seller settings on Discogs turns suggestions on.";
+  }
+}
+
 function GradeLadder({ record: r }: { record: RecordDetail }) {
   const currency = r.current_currency ?? "GBP";
   return (
@@ -133,11 +158,7 @@ function GradeLadder({ record: r }: { record: RecordDetail }) {
           ))}
         </ul>
       ) : (
-        <p className="muted">
-          {r.latest_method === null
-            ? "Shown once the record has a price."
-            : "Discogs is not giving this account price suggestions, so the value is the cheapest copy for sale and does not change with the grade. Filling in seller settings on Discogs turns suggestions on."}
-        </p>
+        <p className="muted">{noLadder(r, currency)}</p>
       )}
     </div>
   );
@@ -204,7 +225,7 @@ function History({ record: r }: { record: RecordDetail }) {
 
 function describe(v: ValuationPoint): string {
   if (v.source === "regrade") return `Regraded to ${v.media_condition ?? "?"}`;
-  return v.method === "lowest_listing" ? "Cheapest for sale" : `Suggested for ${v.media_condition ?? "its grade"}`;
+  return v.method === "lowest_listing" ? "Cheapest listed (asking)" : `Suggested for ${v.media_condition ?? "its grade"}`;
 }
 
 function EditCopy({ record: r }: { record: RecordDetail }) {

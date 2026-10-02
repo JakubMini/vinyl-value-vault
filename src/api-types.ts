@@ -62,13 +62,27 @@ export interface ValuationPoint {
   media_condition: Grade | null;
 }
 
+/**
+ * Whether the latest price from Discogs had a price suggestion to go on, and if not, why not.
+ *
+ * - available:      it did, so the value is Discogs' suggestion for the record's grade
+ * - unavailable:    Discogs gives this account no suggestions: no token, or no seller settings
+ * - no_data:        Discogs has too few sales of this release to suggest a price
+ * - wrong_currency: Discogs suggests prices in the account's selling currency, which is not the vault's
+ *
+ * In all but the first, the value is the cheapest copy for sale.
+ */
+export type SuggestionState = "available" | "unavailable" | "no_data" | "wrong_currency";
+
 /** A record with its price history, as the record page shows it. */
 export interface RecordDetail extends ApiRecord {
   /** Newest first. */
   valuations: ValuationPoint[];
   /** How the latest price from Discogs was worked out, or null if it has never been priced. */
   latest_method: ValuationPoint["method"] | null;
-  /** Discogs' suggestion for every grade, from the latest price; null when Discogs gave none. */
+  /** Whether that price had a suggestion to go on, or null if it has never been priced. */
+  suggestions: SuggestionState | null;
+  /** Discogs' suggestion for every grade, from the latest price; null when there was none to use. */
   price_by_grade: { grade: Grade; value_minor: number | null }[] | null;
   discogs_url: string | null;
 }

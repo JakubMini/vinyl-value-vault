@@ -4,7 +4,7 @@
 
 A small serverless app that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, with a React dashboard served by the same Worker, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026, behind a Cloudflare Access login. My collection, 163 records, is in, and syncs from Discogs daily. Discogs calls leave through a Cloudflare Tunnel from my laptop, because from Cloudflare's shared address Discogs mostly says no (see [The road to Discogs](#the-road-to-discogs)), so prices refresh while the laptop is awake. For now every price is the cheapest copy for sale, because the Discogs account has no seller settings yet, so grades do not move prices. The dashboard is built, deployed and in use (see [Who can get in](#who-can-get-in)).
+> **Status:** live on Cloudflare since 2 October 2026, behind a Cloudflare Access login. My collection, 163 records, is in, and syncs from Discogs daily. Discogs calls leave through a Cloudflare Tunnel from my laptop, because from Cloudflare's shared address Discogs mostly says no (see [The road to Discogs](#the-road-to-discogs)), so prices refresh while the laptop is awake. Since 2 October 2026 the Discogs account has seller settings, so each daily refresh prices a record at Discogs' suggestion for its grade, not the cheapest copy for sale. Every record is still on the default grade, VG+, until I grade them. The dashboard is built, deployed and in use (see [Who can get in](#who-can-get-in)).
 
 ## What it does
 
@@ -44,10 +44,14 @@ The dashboard is a React app that Vite builds into static files, deployed with t
 
 Discogs is the reference market for records and offers two useful numbers for any pressing:
 
-1. **Price suggestions**: what a copy in each condition grade typically sells for. This is the headline value, matched to the grade I recorded for my own copy. It needs an API token and seller settings on the Discogs account.
-2. **Marketplace stats**: the cheapest copy listed right now and how many are for sale. Always available, and the fallback when suggestions are not.
+1. **Price suggestions**: a price for a copy in each condition grade. Discogs estimates what a Mint copy is worth from the release's sales history and current listings, then scales that down grade by grade. This is the headline value, matched to the grade I recorded for my own copy. It needs an API token and seller settings on the Discogs account, and it comes in the account's selling currency, which must be the vault's (GBP).
+2. **Marketplace stats**: the cheapest copy listed right now and how many are for sale. Always available, and the fallback when there is no suggestion to use.
 
-Which of the two produced a value is stored with every valuation, so the figures are never mixed up. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
+The cheapest listing is a rough figure. It is what one seller is asking, for a copy in any grade, and it misses in both directions. Before the account had seller settings, every price came from it: one record in demand, with six copies listed, was valued about 50% above its median sale, and a common record with 245 copies listed was valued at 10p.
+
+Which of the two produced a value is stored with every valuation, so the figures are never mixed up. When the value is the cheapest listing, the record page says why: the account gets no suggestions, they are in another currency, or Discogs has too few sales of that release to suggest a price. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
+
+The Discogs website also shows the lowest, median and highest price of recent sales, which is the closest thing to a true market value. The API does not offer it, and the page needs a login, so the vault cannot read it. Other sources were considered and left out. eBay's sold-price API is open only to developers eBay approves. Its open API has asking prices only, without Goldmine grades, and barcodes are often shared between pressings. Popsike, MusicStack and CDandLP have no public API.
 
 Changing a record's grade re-prices it at once, without calling Discogs: every stored valuation keeps Discogs' suggestions for all eight grades, so the new value is read from the latest one and recorded as a regrade. The record then goes to the front of the queue, and the next run confirms the price with fresh data. When the price came from the cheapest listing, which does not depend on grade, the value stays as it is.
 
@@ -72,7 +76,7 @@ So the vault's Discogs calls take another road, from an address of their own: se
 
 - **Sized to the road.** On the tunnel road a run prices up to 15 records. A run costs 3 subrequests (two reads and the snapshot) and each record up to 3 (two Discogs calls and one write), so 15 records stay under the 50 a run may make, at no more than 30 Discogs calls a minute. On the pool road a run every five minutes prices up to 5.
 - **Only what is due.** A record priced in the last 24 hours is skipped. Once the collection is fresh the job makes no Discogs calls at all, and each record costs one or two calls a day.
-- **No wasted calls.** If Discogs says the account cannot get price suggestions, the job stops asking for the rest of the batch and uses listing prices.
+- **No wasted calls.** If Discogs says the account cannot get price suggestions, or gives them in another currency, the job stops asking for the rest of the batch, uses listing prices, and says why in its log line (`suggestionsSkipped`).
 - **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits for the next run.
 - **The sync takes its own run.** Once a day the cron syncs the collection instead of pricing records: two calls, plus one per 100 items. A sync that fails or is cut short is retried an hour later, so valuations never wait on it for long.
 
@@ -179,7 +183,7 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | `GET /api/collection?days=` | Total value, record counts, when the last price arrived, and one total per day for the last `days` days (30 by default, up to ten years), oldest first. |
 | `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
-| `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, and a link to the release on Discogs. |
+| `GET /api/records/:id?limit=` | One record with its price history, newest first (a year by default, up to 1,000 prices), Discogs' suggested price at every grade from the latest price, whether that price had a suggestion to go on (`suggestions`: `available`, `unavailable`, `no_data` or `wrong_currency`), and a link to the release on Discogs. |
 | `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. `spotify_album_id` takes an album link, a `spotify:album:` URI or a bare id, and stores the id. |
 | `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
@@ -335,6 +339,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Dashboard: the collection's value over time, and its biggest risers and fallers
 - [x] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"
+- [ ] Sold prices from Discogs' sales history, entered by hand, if the suggestions prove off
 - [x] Gain and loss against purchase price, per record and overall
 
 ## Licence

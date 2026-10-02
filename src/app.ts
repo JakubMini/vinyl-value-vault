@@ -35,7 +35,7 @@ import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
 import { spotifyAlbumId } from "./spotify";
 import { syncCollection } from "./sync";
-import { discogsFromEnv, priceByGrade, regrade, runValuationBatch, valueRecord } from "./valuation";
+import { discogsFromEnv, priceByGrade, regrade, runValuationBatch, storedSuggestionState, valueRecord } from "./valuation";
 
 const grade = z.enum(GRADES);
 
@@ -260,6 +260,7 @@ app.get("/records/:id", validate("query", historySchema), async (c) => {
     ...presentRecord(record),
     valuations,
     latest_method: latest?.method ?? null,
+    suggestions: latest ? storedSuggestionState(latest.raw, c.env.VALUATION_CURRENCY) : null,
     price_by_grade: latest ? priceByGrade(latest.raw, c.env.VALUATION_CURRENCY) : null,
     discogs_url: record.discogs_release_id ? `https://www.discogs.com/release/${record.discogs_release_id}` : null,
   } satisfies RecordDetail);
