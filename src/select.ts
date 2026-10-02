@@ -7,11 +7,11 @@
 import type { ListedRecord } from "./api-types";
 import { GRADES, type Grade } from "./grades";
 
-export type SortKey = "artist" | "title" | "year" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added" | "forsale";
+export type SortKey = "artist" | "title" | "year" | "label" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added" | "forsale" | "cheapest";
 export type SortDir = "asc" | "desc";
 export type Status = "collection" | "priced" | "waiting" | "problem" | "gone" | "all";
 
-export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "media", "sleeve", "value", "change", "gain", "valued", "added", "forsale"];
+export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "label", "media", "sleeve", "value", "change", "gain", "valued", "added", "forsale", "cheapest"];
 
 export const STATUSES: readonly { value: Status; label: string }[] = [
   { value: "collection", label: "In the collection" },
@@ -303,6 +303,7 @@ const SORTS: Record<SortKey, (r: ListedRecord) => string | number | null> = {
   artist: (r) => r.artist,
   title: (r) => r.title,
   year: (r) => r.year,
+  label: (r) => r.label,
   media: (r) => GRADE_RANK.get(r.media_condition) ?? null,
   sleeve: (r) => GRADE_RANK.get(r.sleeve_condition) ?? null,
   value: (r) => r.current_value_minor,
@@ -311,6 +312,7 @@ const SORTS: Record<SortKey, (r: ListedRecord) => string | number | null> = {
   valued: (r) => r.last_valued_at,
   added: (r) => r.discogs_added_at ?? r.created_at,
   forsale: (r) => r.current_num_for_sale,
+  cheapest: (r) => r.current_lowest_listing_minor,
 };
 
 function compare(a: string | number, b: string | number): number {

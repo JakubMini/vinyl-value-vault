@@ -15,5 +15,5 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
-  "include": ["web", "src/api-types.ts", "src/grades.ts", "src/insights.ts", "src/money.ts", "src/select.ts", "src/spotify.ts"]
+  "include": ["web", "src/api-types.ts", "src/csv.ts", "src/grades.ts", "src/insights.ts", "src/money.ts", "src/select.ts", "src/spotify.ts"]
 }
