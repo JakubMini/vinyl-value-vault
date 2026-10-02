@@ -25,15 +25,18 @@ export function isQueued(r: ListedRecord): boolean {
 }
 
 /**
- * The whole collection in one request; the table sorts and filters it in the browser. While
- * records are queued it refreshes once a minute, so prices appear as the job reaches them
- * (only while the tab is in view: a list costs about three D1 rows read per record).
+ * The whole collection in one request, each record's change measured over `changeDays`; the
+ * table sorts and filters it in the browser. While records are queued it refreshes once a
+ * minute, so prices appear as the job reaches them (only while the tab is in view: a list costs
+ * about three D1 rows read per record, five with a window other than 30 days). Switching window
+ * keeps the old list on screen until the new one arrives.
  */
-export function useRecords() {
+export function useRecords(changeDays = 30) {
   return useQuery({
-    queryKey: keys.records,
-    queryFn: () => api<RecordsPage>("/records?limit=1000").then((r) => r.records),
+    queryKey: [...keys.records, changeDays],
+    queryFn: () => api<RecordsPage>(`/records?limit=1000&change_days=${changeDays}`).then((r) => r.records),
     refetchInterval: (query) => (query.state.data?.some(isQueued) ? 60_000 : false),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -81,8 +84,9 @@ export function useDeleteRecord() {
 export type RecordPatch = Partial<Pick<ApiRecord, "media_condition" | "sleeve_condition" | "purchase_price_minor" | "purchase_currency" | "purchased_on" | "notes" | "spotify_album_id">>;
 
 /**
- * Change a record. The list updates at once and is put back if the server says no; the
- * server's answer then replaces the guess, since a new media grade also changes the value.
+ * Change a record. Every cached list (one per change window) updates at once and is put back
+ * if the server says no; the server's answer then replaces the guess, since a new media grade
+ * also changes the value.
  */
 export function useUpdateRecord() {
   const client = useQueryClient();
@@ -90,12 +94,12 @@ export function useUpdateRecord() {
     mutationFn: ({ id, patch }: { id: number; patch: RecordPatch }) => api<ApiRecord>(`/records/${id}`, { method: "PATCH", json: patch }),
     onMutate: async ({ id, patch }) => {
       await client.cancelQueries({ queryKey: keys.records });
-      const before = client.getQueryData<ListedRecord[]>(keys.records);
-      client.setQueryData<ListedRecord[]>(keys.records, (rows) => rows?.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      const before = client.getQueriesData<ListedRecord[]>({ queryKey: keys.records });
+      client.setQueriesData<ListedRecord[]>({ queryKey: keys.records }, (rows) => rows?.map((r) => (r.id === id ? { ...r, ...patch } : r)));
       return { before };
     },
     onError: (_error, _vars, context) => {
-      if (context?.before) client.setQueryData(keys.records, context.before);
+      for (const [key, rows] of context?.before ?? []) client.setQueryData(key, rows);
     },
     onSettled: (_data, _error, { id }) => {
       void client.invalidateQueries({ queryKey: keys.records });

@@ -4,7 +4,7 @@ import { MoneyChange } from "./components";
 import { count, formatMinor, plural } from "./format";
 
 /** What the rows on screen add up to, so a filter answers "what is this part of the collection worth?" */
-export function Totals({ shown, all, currency }: { shown: ListedRecord[]; all: number; currency: string }) {
+export function Totals({ shown, all, currency, over }: { shown: ListedRecord[]; all: number; currency: string; over: string }) {
   const t = totals(shown, currency);
   return (
     <p className="totals muted" aria-live="polite">
@@ -19,7 +19,7 @@ export function Totals({ shown, all, currency }: { shown: ListedRecord[]; all: n
       ) : null}
       {t.change_minor !== null ? (
         <span>
-          <MoneyChange minor={t.change_minor} currency={currency} /> in 30 days
+          <MoneyChange minor={t.change_minor} currency={currency} /> {over}
         </span>
       ) : null}
       {t.gain_minor !== null ? (
