@@ -15,6 +15,8 @@ export default defineConfig({
             TEST_MIGRATIONS: migrations,
             API_KEY: "test-api-key",
             DISCOGS_TOKEN: "test-discogs-token",
+            ACCESS_TEAM_DOMAIN: "https://vault-test.cloudflareaccess.com",
+            ACCESS_AUD: "test-access-aud",
           },
         },
       };

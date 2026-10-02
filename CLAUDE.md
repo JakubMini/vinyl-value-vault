@@ -46,7 +46,8 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   grades use the Goldmine scale: M, NM, VG+, VG, G+, G, F, P.
 - Where things live: SQL only in `src/db.ts`; routes in `src/app.ts`; Discogs calls in
   `src/discogs.ts`; Discogs-to-record mapping in `src/release.ts`; the valuation job in
-  `src/valuation.ts`; the Discogs collection sync in `src/sync.ts`; the Worker entry in
+  `src/valuation.ts`; the Discogs collection sync in `src/sync.ts`; Cloudflare Access token checks in
+  `src/access.ts`; the Worker entry in
   `src/index.ts`; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
 - Discogs owns what a pressing is (artist, title, label, year, format, artwork); the vault owns
   what is said about the copy (grades, notes, purchase details). A sync only ever writes the
@@ -66,8 +67,10 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 - Behaviour changes come with tests. Tests mock Discogs at the network layer with Mock Service Worker (`test/helpers.ts`) and never touch the internet.
 - Logs are structured JSON: `console.log(JSON.stringify({ event: "...", ... }))`.
 - Follow Cloudflare's Workers best practices: no request state in module scope, no floating
-  promises, `ctx.waitUntil` for background work, timing-safe secret comparison (Hono's bearerAuth
-  does this), explicit error handling rather than `passThroughOnException`.
+  promises, `ctx.waitUntil` for background work, timing-safe secret comparison (`timingSafeEqual`
+  from `hono/utils/buffer`), explicit error handling rather than `passThroughOnException`. The one
+  module-scope cache is Access's public signing keys in `src/access.ts`: shared by every request,
+  not request state.
 
 ## Commands
 
