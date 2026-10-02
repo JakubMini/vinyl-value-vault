@@ -4,7 +4,7 @@
 
 A small serverless backend that keeps a record of every vinyl I own, asks the market what each one is worth, and always knows what the whole collection is worth. Built on Cloudflare Workers and D1, priced from Discogs, designed to run for free.
 
-> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). The collection itself is still to be imported. See the [roadmap](#roadmap).
+> **Status:** live on Cloudflare since 2 October 2026 ([health check](https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/health)). My collection, 163 records, is in, and syncs from Discogs daily. Pricing is limited by how often Discogs answers Cloudflare's shared address (see [Designed for the free tier](#designed-for-the-free-tier)). Next up is the dashboard: see the [roadmap](#roadmap).
 
 ## What it does
 
@@ -229,7 +229,7 @@ wrangler.jsonc   Worker config: bindings, vars, cron
 
 - [x] Schema, API, valuation job, tests and CI
 - [x] First deployment
-- [ ] Import my actual collection
+- [x] Import my actual collection, and keep it in sync with Discogs
 - [ ] Dashboard: add records, see the total and its trend
 - [ ] Alexa skill: "what is my collection worth?"
 - [ ] Gain and loss against purchase price, per record and overall
