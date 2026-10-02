@@ -1,10 +1,6 @@
-/**
- * Discogs release and collection data, and how it maps onto a record. Its only import is
- * grades.ts, named with its .ts extension, so Node can load this file directly for
- * scripts/import-discogs.ts as well as bundling it into the Worker.
- */
+/** Discogs release and collection data, and how it maps onto a record. */
 
-import { DISCOGS_CONDITION_LABEL, type Grade } from "./grades.ts";
+import { DISCOGS_CONDITION_LABEL, type Grade } from "./grades";
 
 /** The release shape shared by GET /releases/{id} and a collection item's basic_information. */
 export interface Release {
@@ -15,6 +11,9 @@ export interface Release {
   artists?: { name: string; anv?: string; join?: string }[];
   labels?: { name: string; catno?: string }[];
   formats?: { name: string; qty?: string; descriptions?: string[] }[];
+  /** Image URLs, present in collection items. Empty, or a spacer image, when there is no artwork. */
+  cover_image?: string;
+  thumb?: string;
 }
 
 /** Turn a Discogs release into the fields a record needs, so adding by id is enough. */
@@ -76,6 +75,12 @@ export interface CollectionFieldIds {
   notes?: number;
 }
 
+/** Find the condition and notes fields among a collection's fields (GET /users/{name}/collection/fields). */
+export function collectionFieldIds(fields: { id: number; name: string }[]): CollectionFieldIds {
+  const id = (name: string) => fields.find((f) => f.name.trim().toLowerCase() === name)?.id;
+  return { media: id("media condition"), sleeve: id("sleeve condition"), notes: id("notes") };
+}
+
 export interface ImportedRecord {
   discogs_release_id: number;
   discogs_instance_id: number;
@@ -89,6 +94,20 @@ export interface ImportedRecord {
   media_condition?: Grade;
   sleeve_condition?: Grade;
   notes?: string;
+  cover_image_url?: string;
+  thumb_url?: string;
+  discogs_added_at?: string;
+}
+
+/** Discogs serves a spacer image, or nothing, when a release has no artwork. */
+function imageUrl(url: string | undefined): string | undefined {
+  return url && !url.endsWith("/spacer.gif") ? url : undefined;
+}
+
+/** Discogs dates carry a local offset ("2026-10-02T03:26:16-07:00"); the vault stores UTC. */
+function utc(value: string | undefined): string | undefined {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
 }
 
 const GRADE_BY_DISCOGS_LABEL = new Map<string, Grade>(
@@ -101,9 +120,9 @@ export function isVinyl(item: CollectionItem): boolean {
 }
 
 /**
- * Map a collection item to the body for POST /records. Grades come from the collection's
- * condition fields when set; otherwise the vault's default (VG+) applies. A sleeve that is
- * "Generic" or "No Cover" has no grade, so it is recorded in the notes instead.
+ * Map a collection item to a record. Grades come from the collection's condition fields when
+ * set; otherwise the vault's default (VG+) applies. A sleeve that is "Generic" or "No Cover"
+ * has no grade, so it is recorded in the notes instead.
  */
 export function collectionItemToRecord(item: CollectionItem, fields: CollectionFieldIds): ImportedRecord {
   const note = (id: number | undefined) =>
@@ -117,6 +136,9 @@ export function collectionItemToRecord(item: CollectionItem, fields: CollectionF
 
   const mediaGrade = media ? GRADE_BY_DISCOGS_LABEL.get(media) : undefined;
   const sleeveGrade = sleeve ? GRADE_BY_DISCOGS_LABEL.get(sleeve) : undefined;
+  const cover = imageUrl(item.basic_information.cover_image);
+  const thumb = imageUrl(item.basic_information.thumb);
+  const addedAt = utc(item.date_added);
 
   return {
     ...releaseToRecordFields(item.basic_information),
@@ -125,5 +147,8 @@ export function collectionItemToRecord(item: CollectionItem, fields: CollectionF
     ...(mediaGrade ? { media_condition: mediaGrade } : {}),
     ...(sleeveGrade ? { sleeve_condition: sleeveGrade } : {}),
     ...(extraNotes ? { notes: extraNotes } : {}),
+    ...(cover ? { cover_image_url: cover } : {}),
+    ...(thumb ? { thumb_url: thumb } : {}),
+    ...(addedAt ? { discogs_added_at: addedAt } : {}),
   };
 }

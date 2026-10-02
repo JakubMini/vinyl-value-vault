@@ -40,12 +40,17 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 ## Stack and conventions
 
 - TypeScript in strict mode on Cloudflare Workers. Hono for HTTP, Zod for validation, D1 (SQLite)
-  for storage, Cron Triggers for the valuation job, Vitest running inside workerd for tests.
+  for storage, Cron Triggers for the valuation job and the daily collection sync, Vitest running
+  inside workerd for tests.
 - Money is stored as integers in minor units (pence). Times are ISO-8601 UTC strings. Condition
   grades use the Goldmine scale: M, NM, VG+, VG, G+, G, F, P.
 - Where things live: SQL only in `src/db.ts`; routes in `src/app.ts`; Discogs calls in
-  `src/discogs.ts`; Discogs-to-record mapping in `src/release.ts`; the job in `src/valuation.ts`;
-  the Worker entry in `src/index.ts`; laptop-side tools in `scripts/`, run with Node directly.
+  `src/discogs.ts`; Discogs-to-record mapping in `src/release.ts`; the valuation job in
+  `src/valuation.ts`; the Discogs collection sync in `src/sync.ts`; the Worker entry in
+  `src/index.ts`; laptop-side tools, if ever needed, in `scripts/`, run with Node directly.
+- Discogs owns what a pressing is (artist, title, label, year, format, artwork); the vault owns
+  what is said about the copy (grades, notes, purchase details). A sync only ever writes the
+  former to existing records. Keep it that way.
 - Migrations in `migrations/` are append-only. Add a new numbered file; never edit one that may
   already have been applied anywhere.
 - Config lives in `wrangler.jsonc`. After changing bindings or vars run `npm run types`. The generated
@@ -54,8 +59,8 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
   production).
 - Respect the Workers free-plan budget: at most 50 outbound fetches and 10 ms CPU per invocation.
   The cron runs every minute on a batch of 5 records (two Discogs calls each), skipping records priced
-  within `VALUATION_REFRESH_HOURS`. Change `VALUATION_BATCH_SIZE` only with
-  a reason written down.
+  within `VALUATION_REFRESH_HOURS`. Once a day the tick runs the collection sync instead (2 calls plus
+  one per 100 items). Change `VALUATION_BATCH_SIZE` only with a reason written down.
 - Discogs is rate limited to 60 requests a minute. Always send the User-Agent, always read the
   rate-limit headers, stop early rather than get throttled.
 - Behaviour changes come with tests. Tests mock Discogs at the network layer with Mock Service Worker (`test/helpers.ts`) and never touch the internet.
@@ -73,4 +78,6 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 | `npm test` | Tests only. |
 | `npm run db:migrate:local` / `db:migrate:remote` | Apply migrations locally / in production. |
 | `npm run deploy` | Deploy to Cloudflare. |
-| `npm run import:discogs` | Import the Discogs collection into the live vault. Add `-- --dry-run` to preview. |
+
+The Discogs collection syncs itself once a day. To sync now, `POST /api/sync/discogs` (add
+`?dry_run=true` to preview); see the README.

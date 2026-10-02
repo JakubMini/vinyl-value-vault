@@ -12,12 +12,14 @@ import { z } from "zod";
 import {
   type RecordInput,
   type RecordRow,
+  type SyncRunRow,
   collectionSummary,
   deleteRecord,
   getRecord,
   insertRecord,
   listRecords,
   listSnapshots,
+  listSyncRuns,
   listValuations,
   updateRecord,
 } from "./db";
@@ -25,6 +27,7 @@ import { DiscogsError } from "./discogs";
 import { GRADES } from "./grades";
 import { releaseToRecordFields } from "./release";
 import { formatMinor } from "./money";
+import { syncCollection } from "./sync";
 import { discogsFromEnv, runValuationBatch, valueRecord } from "./valuation";
 
 const grade = z.enum(GRADES);
@@ -60,6 +63,15 @@ const pageSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const flag = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((v) => v === "true");
+
+const syncSchema = z.object({ dry_run: flag, force_removals: flag });
+
+const syncRunsSchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) });
+
 /** Validate part of a request with a Zod schema. A failure is a 400 that lists the problems. */
 function validate<U extends "json" | "query", S extends z.ZodType>(target: U, schema: S) {
   return validator(target, (value, c) => {
@@ -77,6 +89,10 @@ function presentRecord(row: RecordRow) {
         ? formatMinor(row.current_value_minor, row.current_currency)
         : null,
   };
+}
+
+function presentSyncRun(run: SyncRunRow) {
+  return { ...run, dry_run: run.dry_run === 1 };
 }
 
 function parseId(raw: string): number | null {
@@ -201,7 +217,7 @@ app.patch("/records/:id", validate("json", patchRecordSchema), async (c) => {
 app.delete("/records/:id", async (c) => {
   const id = parseId(c.req.param("id"));
   if (id === null) return c.json({ error: "Invalid id" }, 400);
-  const deleted = await deleteRecord(c.env.DB, id);
+  const deleted = await deleteRecord(c.env.DB, id, new Date().toISOString());
   return deleted ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
 });
 
@@ -225,6 +241,19 @@ app.post("/valuations/run", async (c) => {
 app.get("/snapshots", validate("query", pageSchema), async (c) => {
   const { limit } = c.req.valid("query");
   return c.json({ snapshots: await listSnapshots(c.env.DB, limit) });
+});
+
+// Sync with the Discogs collection now. The cron does the same once a day.
+// ?dry_run=true reports what would change without writing anything.
+app.post("/sync/discogs", validate("query", syncSchema), async (c) => {
+  const { dry_run, force_removals } = c.req.valid("query");
+  const run = await syncCollection(c.env, { source: "api", dryRun: dry_run, forceRemovals: force_removals });
+  return c.json(presentSyncRun(run), run.status === "failed" ? 502 : 200);
+});
+
+app.get("/sync/runs", validate("query", syncRunsSchema), async (c) => {
+  const { limit } = c.req.valid("query");
+  return c.json({ runs: (await listSyncRuns(c.env.DB, limit)).map(presentSyncRun) });
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

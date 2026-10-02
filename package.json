@@ -13,7 +13,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "npm run types && npm run typecheck && npm test",
-    "import:discogs": "node scripts/import-discogs.ts",
     "db:migrate:local": "wrangler d1 migrations apply vinyl-value-vault --local",
     "db:migrate:remote": "wrangler d1 migrations apply vinyl-value-vault --remote"
   },

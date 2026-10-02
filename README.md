@@ -8,7 +8,8 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 
 ## What it does
 
-- **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs. A whole Discogs collection can be imported in one command, and re-running it only adds what is new.
+- **Keeps the collection.** Each record is stored once: artist, title, pressing details (label, catalogue number, year, country, format), the condition of the disc and the sleeve, and what I paid for it. Adding a record can be as little as its Discogs release id; the rest is filled in from Discogs.
+- **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
 - **Exposes a small JSON API** so a dashboard, a script, or a voice assistant can add records and ask about them.
@@ -19,17 +20,17 @@ A small serverless backend that keeps a record of every vinyl I own, asks the ma
 flowchart LR
   cron([Cron Trigger<br/>every minute]) --> job
   subgraph worker["One Cloudflare Worker"]
-    job["Valuation job<br/>(scheduled handler)"]
+    job["Scheduled handler<br/>valuation job, and once<br/>a day the collection sync"]
     api["HTTP API<br/>(fetch handler)"]
   end
-  job -->|"marketplace stats +<br/>price suggestions"| discogs[("Discogs API")]
+  job -->|"prices, and the<br/>collection itself"| discogs[("Discogs API")]
   job <--> d1[("D1 database<br/>SQLite")]
   api <--> d1
   dash["Dashboard (later)"] -.-> api
   alexa["Alexa skill (later)"] -.-> api
 ```
 
-One Worker, two entry points. The `fetch` handler serves the API; the `scheduled` handler runs the valuation job. Both reach the same D1 database through a binding, so there is no connection string, no server to keep alive, and nothing running between requests.
+One Worker, two entry points. The `fetch` handler serves the API; the `scheduled` handler runs the valuation job, and once a day the collection sync in its place. Both reach the same D1 database through a binding, so there is no connection string, no server to keep alive, and nothing running between requests.
 
 ### How a record gets its price
 
@@ -39,6 +40,17 @@ Discogs is the reference market for records and offers two useful numbers for an
 2. **Marketplace stats**: the cheapest copy listed right now and how many are for sale. Always available, and the fallback when suggestions are not.
 
 Which of the two produced a value is stored with every valuation, so the figures are never mixed up. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
+
+### Staying in step with the Discogs collection
+
+My records are catalogued on Discogs, so that is where the collection lives. The vault syncs with it rather than asking me to enter anything twice.
+
+The rule that keeps this simple is who owns what. **Discogs owns what a pressing is**: artist, title, label, year, format, cover art. **The vault owns what I say about my copy**: its grades, notes and what I paid. A sync adds new items, taking whatever grades Discogs has for them, and refreshes the Discogs-owned details of items already here. It never overwrites a grade or a note set in the vault.
+
+- **Removals are flagged, not deleted.** A record that has left the collection keeps its price history but drops out of the total and the valuation queue. If it comes back, the flag clears.
+- **Deleting is deliberate.** A record deleted from the vault is remembered, so the next sync does not bring it back.
+- **A bad answer cannot empty the vault.** Removals are only decided after every page has been read. If a sync would flag more than a fifth of the collection, it stops and asks for confirmation.
+- **Nothing is written twice.** The sync reads the vault's Discogs-linked records once, works out what is new or changed in memory, and writes each page of up to 100 items in two statements.
 
 ### Designed for the free tier
 
@@ -52,6 +64,7 @@ The job now works with that rather than against it:
 - **Only what is due.** A record priced in the last 24 hours is skipped. Once the collection is fresh the job makes no Discogs calls at all, and each record costs two calls a day.
 - **No wasted calls.** If Discogs says the account cannot get price suggestions, the job stops asking for the rest of the batch and uses listing prices.
 - **Polite under pressure.** It reads Discogs' rate-limit headers and stops early instead of being throttled. Whatever it did not reach waits a minute.
+- **The sync takes its own minute.** Once a day the cron syncs the collection instead of pricing records: two calls, plus one per 100 items. A sync that fails or is cut short is retried an hour later, so valuations never wait on it for long.
 
 At best that is 7,200 record prices a day, far more than the daily refresh of a personal collection needs. Time spent waiting on Discogs does not count as CPU time, so the 10 ms budget is not a concern.
 
@@ -72,13 +85,15 @@ Expected running cost at this scale: nothing.
 
 ## Data model
 
-Three tables. Money is stored as integers in minor units (pence) so there is no floating-point drift. Times are ISO-8601 UTC strings. Condition uses the Goldmine scale collectors use: M, NM, VG+, VG, G+, G, F, P.
+Five tables. Money is stored as integers in minor units (pence) so there is no floating-point drift. Times are ISO-8601 UTC strings. Condition uses the Goldmine scale collectors use: M, NM, VG+, VG, G+, G, F, P.
 
 | Table | One row per | Notes |
 | --- | --- | --- |
-| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Imported records remember their Discogs collection item, which is unique, so an import can never duplicate a record. |
+| `records` | record in the collection | Carries the current value and when it was last looked at, so listing and totalling need no joins. Records from Discogs remember their collection item, which is unique, so a sync can never duplicate a record. Also holds cover art URLs and a flag for records that have left the Discogs collection. |
 | `valuations` | price fetched for a record | Append-only history, with the method used and the raw Discogs payload for re-deriving later. |
 | `collection_snapshots` | valuation run that changed something | The collection total over time, ready to chart. |
+| `sync_runs` | collection sync | What each sync added, refreshed and flagged, and why one stopped early. Also how the cron knows when the next sync is due. |
+| `sync_ignored` | record deleted on purpose | Discogs collection items the sync must not bring back. |
 
 The schema is in [`migrations/`](migrations/), one numbered file per change.
 
@@ -94,10 +109,12 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /api/records/:id` | One record with its valuation history. |
 | `PATCH /api/records/:id` | Change any field a client may set. |
-| `DELETE /api/records/:id` | Remove a record and its history. |
+| `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
 | `POST /api/valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
 | `GET /api/snapshots?limit=` | The collection total over time. |
+| `POST /api/sync/discogs` | Sync with the Discogs collection now. `?dry_run=true` reports what would change without writing; `?force_removals=true` confirms a large removal. Answers 502 if Discogs refused. |
+| `GET /api/sync/runs?limit=` | Recent syncs, newest first. |
 
 Adding a record by its Discogs id:
 
@@ -152,16 +169,20 @@ Checks before pushing:
 npm run check      # regenerate binding types, typecheck, run the tests
 ```
 
-## Importing a Discogs collection
+## Syncing the Discogs collection
+
+The cron does this once a day on its own. To sync now, or to preview first:
 
 ```bash
-npm run import:discogs -- --dry-run     # show what would be imported
-npm run import:discogs                  # import into the live vault
+curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs?dry_run=true" \
+  -H "Authorization: Bearer $API_KEY"
+curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs" \
+  -H "Authorization: Bearer $API_KEY"
 ```
 
-The script reads `DISCOGS_TOKEN` and `API_KEY` from `.dev.vars`. It finds the Discogs account behind the token, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
+The Worker uses `DISCOGS_TOKEN` to find the Discogs account behind it, pages through its collection, keeps the vinyl, and maps each item to a record: pressing details and cover art from Discogs, condition grades from the collection's Media and Sleeve Condition fields where they are filled in, and the collection's notes. A sleeve marked Generic or No Cover has no grade, so it goes into the notes.
 
-Records are created with `?value=false`. Pricing a few hundred records at once would mean a burst of Discogs calls from the Worker; instead the cron prices them a few at a time, every minute, until all are done. Each record stores the Discogs collection item it came from, so the import can be re-run whenever the collection grows.
+New records arrive without a price. Pricing a few hundred records at once would mean a burst of Discogs calls; instead the cron prices them a few at a time, every minute, until all are done.
 
 ## Deploying
 
@@ -190,16 +211,16 @@ After that, `npm run deploy` ships a new version. `npx wrangler tail` streams th
 
 ```
 src/
-  index.ts       Worker entry: fetch -> the API, scheduled -> the valuation job
+  index.ts       Worker entry: fetch -> the API, scheduled -> the valuation job or the daily sync
   app.ts         HTTP routes, validation, authentication
   valuation.ts   the job: pick stale records, price them, snapshot the total
+  sync.ts        the Discogs collection sync: add, refresh, flag what has gone
   discogs.ts     Discogs API client
   release.ts     Discogs release and collection item -> record mapping
   db.ts          every SQL statement, typed
   grades.ts      Goldmine grades and their Discogs labels
   money.ts       minor-unit helpers
 migrations/      D1 schema, numbered and append-only
-scripts/         one-off tools run from a laptop, such as the Discogs import
 test/            Vitest suites running inside workerd
 wrangler.jsonc   Worker config: bindings, vars, cron
 ```
