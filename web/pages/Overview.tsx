@@ -27,9 +27,9 @@ export function Overview() {
       </div>
 
       <div className="tiles">
-        <Tile label="Records" value={count(c.record_count)} />
-        <Tile label="Priced" value={count(c.valued_count)} />
-        <Tile label="Waiting for a price" value={count(c.unpriced_count)} />
+        <Tile label="Records" value={count(c.record_count)} to="/collection" />
+        <Tile label="Priced" value={count(c.valued_count)} to="/collection?status=priced" />
+        <Tile label="Waiting for a price" value={count(c.unpriced_count)} to="/collection?status=waiting" />
         <Tile label="Latest price" value={c.last_valued_at ? <When iso={c.last_valued_at} /> : "Never"} />
       </div>
 

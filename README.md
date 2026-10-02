@@ -12,7 +12,7 @@ A small serverless app that keeps a record of every vinyl I own, asks the market
 - **Follows the Discogs collection.** Once a day, or on demand, the vault syncs with my Discogs collection: new records arrive with the grades I gave them there, pressing details and cover art stay current, and records that leave the collection are flagged rather than deleted, so their price history survives.
 - **Keeps the prices fresh.** Every minute a scheduled job takes a few records whose price is more than a day old and asks Discogs what they are worth today. Every valuation is kept, so each record and the collection as a whole have a price history.
 - **Answers one question quickly.** "What is my collection worth?" is a single query, with the number of records priced, the number still waiting, and when the last price came in.
-- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth and runs or previews a sync with Discogs; the collection table, grading and price history come next.
+- **Has a dashboard.** A web app served by the same Worker, behind a Cloudflare Access login. Today it shows what the collection is worth, lists the whole collection in a table that sorts, searches and filters, lets me grade each record in place, and runs or previews a sync with Discogs. Price history charts come next.
 - **Exposes a small JSON API** so the dashboard, a script, or a voice assistant can add records and ask about them.
 
 ## How it works
@@ -44,6 +44,8 @@ Discogs is the reference market for records and offers two useful numbers for an
 2. **Marketplace stats**: the cheapest copy listed right now and how many are for sale. Always available, and the fallback when suggestions are not.
 
 Which of the two produced a value is stored with every valuation, so the figures are never mixed up. If nothing is for sale and Discogs has no suggestion, the record keeps its last value and the reason is written on it, visible in the API.
+
+Changing a record's grade re-prices it at once, without calling Discogs: every stored valuation keeps Discogs' suggestions for all eight grades, so the new value is read from the latest one and recorded as a regrade. The record then goes to the front of the queue, and the next run confirms the price with fresh data. When the price came from the cheapest listing, which does not depend on grade, the value stays as it is.
 
 ### Staying in step with the Discogs collection
 
@@ -111,10 +113,10 @@ Every route lives under `/api`, which leaves the rest of the hostname free for t
 | --- | --- |
 | `GET /api/health` | Liveness check. No key needed. |
 | `GET /api/collection` | Total value, record counts, when the last price arrived, and the last 30 snapshots. |
-| `GET /api/records?limit=&offset=` | The collection, alphabetical. |
+| `GET /api/records?limit=&offset=` | The collection, alphabetical, up to 1,000 a page. Each record carries its change over 30 days and its gain against what I paid (when both are in the same currency). |
 | `POST /api/records` | Add a record. Give a `discogs_release_id` alone, or `artist` and `title`. Priced immediately when it has a Discogs id, unless `?value=false` leaves it to the cron. A repeated `discogs_instance_id` gets a 409. |
 | `GET /api/records/:id` | One record with its valuation history. |
-| `PATCH /api/records/:id` | Change any field a client may set. |
+| `PATCH /api/records/:id` | Change any field a client may set. A new media grade re-prices the record from the stored Discogs suggestions and queues it for a fresh price. |
 | `DELETE /api/records/:id` | Remove a record and its history. A record from the Discogs collection is remembered, so a sync does not bring it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
 | `POST /api/valuations/run?limit=` | Run a valuation batch now. The cron does exactly this. |
@@ -260,7 +262,7 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] First deployment
 - [x] Import my actual collection, and keep it in sync with Discogs
 - [x] Dashboard, first step: the total, and syncing with Discogs
-- [ ] Dashboard: the collection table, sorting and grading
+- [x] Dashboard: the collection table, sorting and grading
 - [ ] Dashboard: each record's price history, and the collection's
 - [ ] Spotify links for every record
 - [ ] Alexa skill: "what is my collection worth?"

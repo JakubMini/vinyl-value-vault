@@ -195,6 +195,16 @@ nav {
   padding: 16px;
 }
 
+.tile-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.tile-link:hover {
+  border-color: var(--ink-muted);
+}
+
 .tile-label {
   color: var(--ink-2);
   font-size: 13px;
@@ -390,5 +400,157 @@ nav {
 
   .page {
     padding-top: 24px;
+  }
+}
+
+/* Collection */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-height: 38px;
+}
+
+.filters input[type="search"] {
+  flex: 1 1 280px;
+}
+
+.sort {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.sort:hover {
+  color: var(--ink);
+}
+
+th[aria-sort="ascending"],
+th[aria-sort="descending"] {
+  color: var(--ink);
+}
+
+.sort-mark {
+  display: inline-block;
+  width: 1ch;
+}
+
+.records td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.cover-col {
+  width: 56px;
+  padding-right: 0 !important;
+}
+
+.thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--hover);
+}
+
+.record-cell {
+  min-width: 200px;
+  max-width: 420px;
+}
+
+.record-title {
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* One line, cut with an ellipsis; the full text is in the title attribute. */
+.record-sub {
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+.records tr.gone td {
+  opacity: 0.6;
+}
+
+.grade {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.grade:hover,
+.grade:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.strong {
+  font-weight: 600;
+}
+
+.change-up {
+  color: var(--good);
+  white-space: nowrap;
+}
+
+.change-down {
+  color: var(--critical);
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .hide-narrow {
+    display: none;
+  }
+
+  .record-cell,
+  .record-sub {
+    min-width: 0;
+    max-width: 38vw;
+  }
+
+  .table th,
+  .table td {
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }

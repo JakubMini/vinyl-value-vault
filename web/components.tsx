@@ -1,9 +1,10 @@
 /** Small pieces shared across pages. */
 import type { ReactNode } from "react";
+import { Link } from "react-router";
 
 import type { SyncRun } from "../src/api-types";
 import { ApiError } from "./api";
-import { dateTime, timeAgo } from "./format";
+import { dateTime, formatMinor, timeAgo } from "./format";
 
 const STATUS: Record<SyncRun["status"], { label: string; icon: string; tone: string }> = {
   ok: { label: "Done", icon: "✓", tone: "good" },
@@ -32,13 +33,37 @@ export function When({ iso }: { iso: string }) {
   );
 }
 
-export function Tile({ label, value, detail }: { label: string; value: ReactNode; detail?: ReactNode }) {
+/**
+ * A signed change in money: "+£3.00" with an up arrow, "−£1.50" with a down arrow, a dash when
+ * unknown. Direction is carried by the sign and the arrow, not by colour alone.
+ */
+export function MoneyChange({ minor, currency }: { minor: number | null; currency: string | null }) {
+  if (minor === null || currency === null) return <span className="muted">—</span>;
+  if (minor === 0) return <span className="muted">{formatMinor(0, currency)}</span>;
+  const up = minor > 0;
   return (
-    <div className="tile">
+    <span className={up ? "change-up" : "change-down"}>
+      <span aria-hidden="true">{up ? "▲ " : "▼ "}</span>
+      {up ? "+" : "−"}
+      {formatMinor(Math.abs(minor), currency)}
+    </span>
+  );
+}
+
+export function Tile({ label, value, detail, to }: { label: string; value: ReactNode; detail?: ReactNode; to?: string }) {
+  const body = (
+    <>
       <div className="tile-label">{label}</div>
       <div className="tile-value">{value}</div>
       {detail ? <div className="tile-detail">{detail}</div> : null}
-    </div>
+    </>
+  );
+  return to ? (
+    <Link to={to} className="tile tile-link">
+      {body}
+    </Link>
+  ) : (
+    <div className="tile">{body}</div>
   );
 }
 

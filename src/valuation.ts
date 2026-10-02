@@ -16,15 +16,18 @@
  * VALUATION_REFRESH_HOURS are skipped, so a fresh collection costs no calls.
  */
 import {
+  type RecordPatch,
   type RecordRow,
   type SnapshotRow,
+  latestDiscogsValuation,
   recordValuation,
+  regradeRecord,
   recordValuationFailure,
   staleRecords,
   writeSnapshot,
 } from "./db";
-import { DiscogsClient, DiscogsError } from "./discogs";
-import { DISCOGS_CONDITION_LABEL } from "./grades";
+import { DiscogsClient, DiscogsError, type PriceSuggestions } from "./discogs";
+import { DISCOGS_CONDITION_LABEL, type Grade } from "./grades";
 import { toMinor } from "./money";
 
 export type ValuationOutcome =
@@ -110,6 +113,38 @@ export async function valueRecord(
     raw: { stats, suggestions },
   });
   return { status: "valued", recordId: record.id, valueMinor: value.minor, method: value.method };
+}
+
+/**
+ * Discogs' suggested price for a grade, read from a stored valuation's raw payload, in minor
+ * units. Null when the payload has no suggestions (they were unavailable when it was fetched),
+ * no entry for that grade, or an entry in another currency.
+ */
+export function suggestedValue(raw: string | null, grade: Grade, currency: string): number | null {
+  if (!raw) return null;
+  let suggestions: PriceSuggestions | null | undefined;
+  try {
+    suggestions = (JSON.parse(raw) as { suggestions?: PriceSuggestions | null }).suggestions;
+  } catch {
+    return null;
+  }
+  const suggestion = suggestions?.[DISCOGS_CONDITION_LABEL[grade]];
+  return suggestion && suggestion.currency === currency ? toMinor(suggestion.value) : null;
+}
+
+/**
+ * Change a record's media grade and re-price it at once, without calling Discogs: every stored
+ * valuation already holds Discogs' suggestions for all eight grades. If there is no suggestion
+ * to use, the old value stands. Either way the record goes to the front of the valuation queue.
+ */
+export async function regrade(db: D1Database, record: RecordRow, patch: RecordPatch & { media_condition: Grade }, currency: string, now: string) {
+  const latest = await latestDiscogsValuation(db, record.id);
+  const minor = latest ? suggestedValue(latest.raw, patch.media_condition, currency) : null;
+  const value =
+    latest && minor !== null
+      ? { value_minor: minor, currency, lowest_listing_minor: latest.lowest_listing_minor, num_for_sale: latest.num_for_sale }
+      : null;
+  return regradeRecord(db, record.id, patch, value, now);
 }
 
 /** One scheduled run: refresh the stalest records, then snapshot the collection total if anything changed. */
