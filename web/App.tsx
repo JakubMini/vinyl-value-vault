@@ -5,12 +5,13 @@ import { Insights } from "./pages/Insights";
 import { Overview } from "./pages/Overview";
 import { Record } from "./pages/Record";
 import { Sync } from "./pages/Sync";
+import { SyncStatus } from "./SyncStatus";
+import "./header.css";
 
 const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/collection", label: "Collection" },
   { to: "/insights", label: "Insights" },
-  { to: "/sync", label: "Sync" },
 ];
 
 export function App() {
@@ -29,6 +30,7 @@ export function App() {
               </NavLink>
             ))}
           </nav>
+          <SyncStatus />
         </div>
       </header>
       <main className="page">

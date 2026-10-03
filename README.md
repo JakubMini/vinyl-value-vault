@@ -34,11 +34,11 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 
 | Page | What's on it |
 | --- | --- |
-| Overview | Total value and how it moved (a week to all time), biggest risers and fallers, gain on what I paid. |
+| Overview | Total value, what price moves did to it (a week to all time), a chart of it over time, biggest risers and fallers. Gain on what I paid, and records waiting for a price, appear only when there are some. |
 | Collection | A table or a wall of covers. Sort, search, filter by grade, decade, format, genre, label, value and more. Totals follow the filter, and the filter lives in the URL. Pick columns, export CSV, grade in place, re-price whatever is ticked. |
 | Record | Price history beside the cheapest copy for sale, Discogs' price at every grade, rank in the collection, yearly gain, more by the same artist or label. |
 | Insights | Value by decade, format, grade, genre, label or artist; price bands; how the collection grew. Built from data the table already loaded, so no extra reads. |
-| Sync | Run or preview a Discogs sync. |
+| Sync | Run or preview a Discogs sync, and see the recent ones. A dot in the header, on every page, says how the last one went. |
 
 <table>
   <tr>
