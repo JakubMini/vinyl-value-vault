@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeFilters,
   applySelection,
+  chooseTab,
   clearFilters,
   DEFAULT_SELECTION,
   decadeOf,
@@ -10,11 +11,11 @@ import {
   matches,
   parseFormat,
   QUICK_FILTERS,
-  quickFilterActive,
   readSelection,
   type Selection,
   sortRecords,
-  toggleQuickFilter,
+  TABS,
+  tabOf,
   totals,
   writeSelection,
 } from "../src/select";
@@ -55,6 +56,19 @@ describe("a selection in the URL", () => {
     expect(writeSelection(DEFAULT_SELECTION)).toEqual([]);
   });
 
+  it("puts the most valuable first by default", () => {
+    expect(readSelection(params(""))).toMatchObject({ sort: "value", dir: "desc" });
+    expect(writeSelection(select({ dir: "asc" }))).toEqual([["dir", "asc"]]);
+    expect(readSelection(params("dir=asc"))).toEqual(select({ dir: "asc" }));
+  });
+
+  it("reads a sort named without a direction as ascending, as links made before the default changed meant", () => {
+    expect(readSelection(params("sort=year"))).toMatchObject({ sort: "year", dir: "asc" });
+    expect(readSelection(params("sort=value"))).toMatchObject({ sort: "value", dir: "asc" });
+    expect(readSelection(params("sort=forsale&dir=asc"))).toMatchObject({ sort: "forsale", dir: "asc" });
+    expect(writeSelection(select({ sort: "forsale", dir: "asc" }))).toEqual([["sort", "forsale"]]);
+  });
+
   it("reads what is there and falls back on anything unknown", () => {
     expect(readSelection(params("q=dummy&grade=NM&status=gone&sort=value&dir=desc"))).toEqual(select({ q: "dummy", grade: "NM", status: "gone", sort: "value", dir: "desc" }));
     expect(readSelection(params("grade=A1&status=lost&sort=colour&dir=sideways"))).toEqual(DEFAULT_SELECTION);
@@ -73,7 +87,7 @@ describe("a selection in the URL", () => {
   });
 
   it("round-trips the narrow filters, descriptors repeated", () => {
-    const s = select({ decade: "1970s", kind: "LP", discs: "2", desc: ["Compilation", "Mono"], label: "CBS", artist: "Abba", genre: "Pop", style: "Europop", sleeve: "VG", spotify: "no", paid: "yes", min: 5, max: 20.5, move: "up", gain: "down", how: "listing", scarce: true });
+    const s = select({ decade: "1970s", kind: "LP", discs: "2", desc: ["Compilation", "Mono"], label: "CBS", artist: "Abba", genre: "Pop", style: "Europop", sleeve: "VG", spotify: "no", paid: "yes", min: 5, max: 20.5, move: "up", gain: "down", how: "listing", scarce: true, todo: true });
     const written = writeSelection(s);
     expect(written.filter(([k]) => k === "desc")).toEqual([
       ["desc", "Compilation"],
@@ -85,11 +99,15 @@ describe("a selection in the URL", () => {
   it("drops bounds and choices it cannot read", () => {
     expect(readSelection(params("min=abc&max=-3&decade=seventies&kind=cassette&discs=9&spotify=maybe&move=sideways&gain=lots"))).toEqual(DEFAULT_SELECTION);
     expect(readSelection(params("desc=&desc=Mono&desc=Mono")).desc).toEqual(["Mono"]);
+    expect(readSelection(params("todo=yes")).todo).toBe(false);
+    expect(readSelection(params("todo=1")).todo).toBe(true);
   });
 
-  it("clears the narrow filters and keeps the rest", () => {
-    const s = select({ q: "abba", grade: "NM", status: "all", sort: "value", dir: "desc", decade: "1970s", desc: ["Mono"], min: 5, artist: "Abba" });
-    expect(clearFilters(s)).toEqual(select({ q: "abba", grade: "NM", status: "all", sort: "value", dir: "desc" }));
+  it("clears every filter, keeping the search, the order and the tab", () => {
+    const s = select({ q: "abba", grade: "NM", status: "all", sort: "year", dir: "desc", decade: "1970s", desc: ["Mono"], min: 5, artist: "Abba", todo: true });
+    expect(clearFilters(s)).toEqual(select({ q: "abba", sort: "year", dir: "desc", todo: true }));
+    expect(clearFilters(select({ move: "up", scarce: true }))).toEqual(select({ move: "up" }));
+    expect(clearFilters(select({ move: "flat", scarce: true }))).toEqual(DEFAULT_SELECTION);
   });
 });
 
@@ -111,6 +129,13 @@ describe("which records a selection shows", () => {
     ["all", [1, 2, 3, 4]],
   ] as const)("status %s", (status, expected) => {
     expect(ids({ status })).toEqual(expected);
+  });
+
+  it("finds what is left to do: no price yet, or no Spotify album", () => {
+    const linked = listedRecord({ id: 5, artist: "Kult", title: "Spokojnie", spotify_album_id: "abc", current_value_minor: 900, current_currency: "GBP" });
+    const unpriced = listedRecord({ id: 6, artist: "Kult", title: "Posłuchaj", spotify_album_id: "def" });
+    expect(ids({ todo: true })).toEqual([1, 2, 3]);
+    expect([linked, unpriced].filter((r) => matches(r, select({ todo: true }))).map((r) => r.id)).toEqual([6]);
   });
 
   it("filters by media grade", () => {
@@ -252,27 +277,75 @@ describe("the narrow filters", () => {
   });
 
   it("describes the filters in force, each with a way out", () => {
-    const s = select({ artist: "Abba", genre: "Pop", decade: "1970s", desc: ["Mono", "Compilation"], min: 5, max: 20, move: "up", q: "keep me", how: "listing", scarce: true });
+    const s = select({ artist: "Abba", genre: "Pop", decade: "1970s", desc: ["Mono", "Compilation"], grade: "NM", min: 5, max: 20, move: "flat", q: "keep me", how: "listing", scarce: true, status: "all" });
     const chips = activeFilters(s, (n) => `£${n}`);
-    expect(chips.map((c) => c.label)).toEqual(["Abba", "Pop", "1970s", "Mono", "Compilation", "£5 to £20", "Rose in 30 days", "Priced from a listing", "3 or fewer for sale"]);
+    expect(chips.map((c) => c.label)).toEqual(["Abba", "Pop", "1970s", "Mono", "Compilation", "Media NM", "£5 to £20", "Flat in 30 days", "Priced from a listing", "3 or fewer for sale", "Everything"]);
+    expect(chips.find((c) => c.label === "Everything")!.next.status).toBe("collection");
     expect(chips.find((c) => c.label === "Mono")!.next.desc).toEqual(["Compilation"]);
     expect(chips.find((c) => c.label === "£5 to £20")!.next).toMatchObject({ min: null, max: null, q: "keep me" });
     expect(activeFilters(select({ max: 20 }), (n) => `£${n}`)[0]!.label).toBe("Up to £20");
   });
 
-  it("quick filters go on and off, leaving a search alone", () => {
-    const risers = QUICK_FILTERS.find((f) => f.id === "risers")!;
-    const on = toggleQuickFilter(select({ q: "abba" }), risers);
-    expect(on).toMatchObject({ q: "abba", move: "up", sort: "change", dir: "desc" });
-    expect(quickFilterActive(on, risers)).toBe(true);
-    expect(toggleQuickFilter(on, risers)).toEqual(select({ q: "abba" }));
-    expect(rows.filter((r) => matches(r, on)).map((r) => r.id)).toEqual([1]);
+  it("leaves out the filter a tab already says", () => {
+    const labels = (changes: Partial<Selection>) => activeFilters(select(changes), (n) => `£${n}`).map((c) => c.label);
+    expect(labels({ move: "up", genre: "Pop" })).toEqual(["Pop"]);
+    expect(labels({ todo: true, spotify: "no" })).toEqual(["Not on Spotify"]);
+    expect(labels({ todo: true, move: "down" })).toEqual(["To do"]);
   });
 
-  it("every quick filter shows something sensible on a mixed collection", () => {
+  it("tabs go on one at a time, bringing their order and leaving a search alone", () => {
+    const risers = chooseTab(select({ q: "abba" }), "risers");
+    expect(risers).toEqual(select({ q: "abba", move: "up", sort: "change", dir: "desc" }));
+    expect(tabOf(risers).id).toBe("risers");
+    expect(chooseTab(risers, "risers")).toBe(risers);
+    expect(chooseTab(risers, "todo")).toEqual(select({ q: "abba", todo: true }));
+    expect(chooseTab(risers, "all")).toEqual(select({ q: "abba" }));
+    expect(tabOf(select({ move: "flat" })).id).toBe("all");
+  });
+
+  it("keeps an order chosen since the tab went on", () => {
+    const resorted = { ...chooseTab(select({}), "fallers"), sort: "artist" as const, dir: "asc" as const };
+    expect(chooseTab(resorted, "all")).toEqual(select({ sort: "artist", dir: "asc" }));
+  });
+
+  it("every tab shows something sensible on a mixed collection", () => {
+    const expected: Record<string, number[]> = { all: [2, 1, 3, 4], risers: [1], fallers: [2], todo: [2, 3, 4] };
+    for (const tab of TABS) {
+      expect(applySelection(rows, chooseTab(select({}), tab.id)).map((r) => r.id), tab.id).toEqual(expected[tab.id]);
+    }
+  });
+
+  it("every quick filter other pages link into shows something sensible on a mixed collection", () => {
     const expected: Record<string, number[]> = { valuable: [2, 1, 3], risers: [1], fallers: [2], waiting: [4], "no-spotify": [2, 3, 4], bargains: [1], scarce: [3] };
     for (const f of QUICK_FILTERS) {
-      expect(applySelection(rows, toggleQuickFilter(select({}), f)).map((r) => r.id), f.id).toEqual(expected[f.id]);
+      expect(applySelection(rows, select(f.preset)).map((r) => r.id), f.id).toEqual(expected[f.id]);
     }
+  });
+
+  it("builds the risers and fallers tabs from the quick filters of the same name", () => {
+    for (const id of ["risers", "fallers"] as const) {
+      expect(chooseTab(select({}), id)).toEqual(select(QUICK_FILTERS.find((f) => f.id === id)!.preset));
+    }
+  });
+
+  it("counts grades, statuses and scarce records like any other facet", () => {
+    const o = facetOptions(rows, select({ grade: "NM", scarce: true }));
+    expect(o.grade).toEqual([
+      { value: "NM", label: "NM", count: 0 },
+      { value: "VG+", label: "VG+", count: 1 },
+    ]);
+    expect(o.scarce).toEqual([{ value: "yes", label: "3 or fewer for sale", count: 0 }]);
+    const all = facetOptions(rows, select({}));
+    expect(all.scarce).toEqual([{ value: "yes", label: "3 or fewer for sale", count: 1 }]);
+    expect(all.status.map((x) => `${x.value}:${x.count}`)).toEqual(["collection:4", "priced:3", "waiting:1", "all:4"]);
+  });
+
+  it("keeps a chosen option listed when nothing would match it, so it can be taken off", () => {
+    const o = facetOptions(rows, select({ kind: '7"', decade: "1990s", spotify: "yes", label: "Nowhere", desc: ["Picture Disc"], status: "problem" }));
+    expect(o.decade).toEqual([{ value: "1990s", label: "1990s", count: 0 }]);
+    expect(o.spotify).toEqual([{ value: "yes", label: "On Spotify", count: 0 }]);
+    expect(o.label).toEqual([{ value: "Nowhere", label: "Nowhere", count: 0 }]);
+    expect(o.desc).toEqual([{ value: "Picture Disc", label: "Picture Disc", count: 0 }]);
+    expect(o.status.map((x) => x.value)).toEqual(["problem"]);
   });
 });

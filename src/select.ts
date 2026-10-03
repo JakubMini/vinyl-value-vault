@@ -45,7 +45,6 @@ export interface Selection {
   status: Status;
   sort: SortKey;
   dir: SortDir;
-  // The narrower criteria, kept under "More filters".
   sleeve: Grade | "";
   /** "1970s", or "" for any. */
   decade: string;
@@ -72,14 +71,16 @@ export interface Selection {
   how: How;
   /** Only records with SCARCE_COPIES copies for sale or fewer. */
   scarce: boolean;
+  /** Only records with something left to do: a price to find or a Spotify album to link. */
+  todo: boolean;
 }
 
 export const DEFAULT_SELECTION: Readonly<Selection> = {
   q: "",
   grade: "",
   status: "collection",
-  sort: "artist",
-  dir: "asc",
+  sort: "value",
+  dir: "desc",
   sleeve: "",
   decade: "",
   kind: "",
@@ -97,6 +98,24 @@ export const DEFAULT_SELECTION: Readonly<Selection> = {
   gain: "",
   how: "",
   scarce: false,
+  todo: false,
+};
+
+/** The way each order runs when first chosen: biggest, newest and best first; names A to Z; scarcest first. */
+export const FIRST_DIR: Readonly<Record<SortKey, SortDir>> = {
+  artist: "asc",
+  title: "asc",
+  year: "desc",
+  label: "asc",
+  media: "asc",
+  sleeve: "asc",
+  value: "desc",
+  change: "desc",
+  gain: "desc",
+  valued: "desc",
+  added: "desc",
+  forsale: "asc",
+  cheapest: "desc",
 };
 
 /** The URL parameters a selection is kept in. Anything else in the URL belongs to someone else. */
@@ -123,6 +142,7 @@ export const SELECTION_KEYS = [
   "gain",
   "how",
   "scarce",
+  "todo",
 ] as const;
 
 /** What a selection is read from: URLSearchParams, or anything shaped like it. */
@@ -146,18 +166,26 @@ function amount(value: string | null): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** A selection from the URL. Anything unknown falls back to the default, so a stale link still shows the collection. */
+/**
+ * A selection from the URL. Anything unknown falls back to the default, so a stale link still shows the collection.
+ *
+ * The default order is most valuable first. A link that names a sort but no direction means
+ * ascending, as it always has, so links made before the default changed still read the same.
+ */
 export function readSelection(params: ParamsLike): Selection {
   const grade = params.get("grade");
   const sleeve = params.get("sleeve");
   const decade = params.get("decade") ?? "";
   const status = params.get("status");
+  const sort = params.get("sort");
+  const named = (SORT_KEYS as readonly string[]).includes(sort ?? "");
+  const dir = params.get("dir");
   return {
     q: params.get("q") ?? "",
     grade: isGrade(grade) ? grade : "",
     status: STATUSES.some((s) => s.value === status) ? (status as Status) : DEFAULT_SELECTION.status,
-    sort: oneOf(params.get("sort"), SORT_KEYS, DEFAULT_SELECTION.sort),
-    dir: params.get("dir") === "desc" ? "desc" : "asc",
+    sort: named ? (sort as SortKey) : DEFAULT_SELECTION.sort,
+    dir: dir === "asc" || dir === "desc" ? dir : named ? "asc" : DEFAULT_SELECTION.dir,
     sleeve: isGrade(sleeve) ? sleeve : "",
     decade: /^\d{4}s$/.test(decade) ? decade : "",
     kind: oneOf(params.get("kind"), FORMAT_KINDS, ""),
@@ -175,6 +203,7 @@ export function readSelection(params: ParamsLike): Selection {
     gain: oneOf(params.get("gain"), GAIN_DIRS, ""),
     how: oneOf(params.get("how"), HOWS, ""),
     scarce: params.get("scarce") === "1",
+    todo: params.get("todo") === "1",
   };
 }
 
@@ -187,8 +216,11 @@ export function writeSelection(s: Selection): [string, string][] {
   put("q", s.q);
   put("grade", s.grade);
   if (s.status !== DEFAULT_SELECTION.status) put("status", s.status);
-  if (s.sort !== DEFAULT_SELECTION.sort) put("sort", s.sort);
-  if (s.dir !== DEFAULT_SELECTION.dir) put("dir", s.dir);
+  // A named sort reads as ascending unless told otherwise; the default sort reads as its own direction.
+  if (s.sort !== DEFAULT_SELECTION.sort) {
+    put("sort", s.sort);
+    if (s.dir !== "asc") put("dir", s.dir);
+  } else if (s.dir !== DEFAULT_SELECTION.dir) put("dir", s.dir);
   put("sleeve", s.sleeve);
   put("decade", s.decade);
   put("kind", s.kind);
@@ -206,12 +238,36 @@ export function writeSelection(s: Selection): [string, string][] {
   put("gain", s.gain);
   put("how", s.how);
   if (s.scarce) put("scarce", "1");
+  if (s.todo) put("todo", "1");
   return out;
 }
 
-/** The narrow filters cleared; search, grade, status and sort order stay. */
+/** Every filter cleared. The search, the sort order and the tab in view stay. */
 export function clearFilters(s: Selection): Selection {
-  return { ...s, sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", artist: "", genre: "", style: "", spotify: "", paid: "", min: null, max: null, move: "", gain: "", how: "", scarce: false };
+  return {
+    ...s,
+    grade: "",
+    status: DEFAULT_SELECTION.status,
+    sleeve: "",
+    decade: "",
+    kind: "",
+    discs: "",
+    desc: [],
+    label: "",
+    artist: "",
+    genre: "",
+    style: "",
+    spotify: "",
+    paid: "",
+    min: null,
+    max: null,
+    move: "",
+    gain: "",
+    how: "",
+    scarce: false,
+    todo: false,
+    ...tabOf(s).filter,
+  };
 }
 
 /** Only a record with a Discogs release, still in the collection, can be priced. */
@@ -235,6 +291,16 @@ export function matchesStatus(r: ListedRecord, status: Status): boolean {
     case "all":
       return true;
   }
+}
+
+/** No price yet: still waiting for its first, or Discogs had none to give. */
+export function needsPrice(r: ListedRecord): boolean {
+  return r.current_value_minor === null;
+}
+
+/** Something left to do: a price to find, or a Spotify album to link. */
+export function isToDo(r: ListedRecord): boolean {
+  return needsPrice(r) || r.spotify_album_id === null;
 }
 
 /** Case-insensitive substring search over the words a collector reaches for. */
@@ -287,6 +353,7 @@ export function matches(r: ListedRecord, s: Selection): boolean {
   }
   if (s.how && r.current_method !== (s.how === "suggestion" ? "price_suggestion" : "lowest_listing")) return false;
   if (s.scarce && !isScarce(r)) return false;
+  if (s.todo && !isToDo(r)) return false;
   return true;
 }
 
@@ -397,7 +464,7 @@ export function decadeOf(year: number | null | undefined): string | null {
 
 // --- What a selection could narrow to, and what it adds up to --------------------------------
 
-export type FacetKey = "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "genre" | "style" | "spotify" | "paid" | "move" | "gain" | "how";
+export type FacetKey = "grade" | "status" | "sleeve" | "decade" | "kind" | "discs" | "desc" | "label" | "genre" | "style" | "spotify" | "paid" | "move" | "gain" | "how" | "scarce";
 
 export interface FacetOption {
   value: string;
@@ -408,7 +475,7 @@ export interface FacetOption {
 
 export type FacetOptions = Record<FacetKey, FacetOption[]>;
 
-const FACET_RESET: { [K in FacetKey]: Selection[K] } = { sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", genre: "", style: "", spotify: "", paid: "", move: "", gain: "", how: "" };
+const FACET_RESET: { [K in FacetKey]: Selection[K] } = { grade: "", status: "all", sleeve: "", decade: "", kind: "", discs: "", desc: [], label: "", genre: "", style: "", spotify: "", paid: "", move: "", gain: "", how: "", scarce: false };
 
 const DISC_LABELS: Record<Exclude<Discs, "">, string> = { "1": "1 disc", "2": "2 discs", "3+": "3 or more" };
 const YES_NO_LABELS = {
@@ -418,12 +485,14 @@ const YES_NO_LABELS = {
 const MOVE_LABELS: Record<Exclude<Move, "">, string> = { up: "Rose", down: "Fell", flat: "Flat" };
 const GAIN_LABELS: Record<Exclude<GainDir, "">, string> = { up: "Worth more than paid", down: "Worth less than paid" };
 const HOW_LABELS: Record<Exclude<How, "">, string> = { suggestion: "Discogs' suggestion", listing: "Cheapest copy for sale" };
+const SCARCE_LABEL = `${SCARCE_COPIES} or fewer for sale`;
 
 /**
  * The options for every facet, each with the number of records it would show. A facet's counts
  * are taken with that facet cleared and everything else applied, so an option says what choosing
  * it would do. Descriptors stack (a record must carry all the chosen ones), so their counts are
- * taken over the records already shown.
+ * taken over the records already shown. Statuses overlap (a priced record is also in the
+ * collection), so each counts on its own. Options nothing would match are left out, unless chosen.
  */
 export function facetOptions(records: readonly ListedRecord[], s: Selection): FacetOptions {
   const without = (key: FacetKey) => records.filter((r) => matches(r, { ...s, [key]: FACET_RESET[key] }));
@@ -435,30 +504,41 @@ export function facetOptions(records: readonly ListedRecord[], s: Selection): Fa
     }
     return counts;
   };
-  const inOrder = (values: readonly string[], counts: Map<string, number>, label: (v: string) => string = (v) => v) =>
-    values.map((value) => ({ value, label: label(value), count: counts.get(value) ?? 0 })).filter((o) => o.count > 0);
-  const byCount = (counts: Map<string, number>) =>
-    [...counts.entries()].sort((a, b) => b[1] - a[1] || text.compare(a[0], b[0])).map(([value, n]) => ({ value, label: value, count: n }));
+  /** What the selection has chosen in a facet. A chosen option stays listed even when nothing would match it, so it can be seen and taken off. */
+  const chosen = (key: FacetKey): readonly string[] => {
+    const v = s[key];
+    return Array.isArray(v) ? v : v === true ? ["yes"] : typeof v === "string" && v ? [v] : [];
+  };
+  const inOrder = (key: FacetKey, values: readonly string[], counts: Map<string, number>, label: (v: string) => string = (v) => v) =>
+    values.map((value) => ({ value, label: label(value), count: counts.get(value) ?? 0 })).filter((o) => o.count > 0 || chosen(key).includes(o.value));
+  const byCount = (key: FacetKey, counts: Map<string, number>) =>
+    [...counts.entries(), ...chosen(key).filter((v) => !counts.has(v)).map((v): [string, number] => [v, 0])]
+      .sort((a, b) => b[1] - a[1] || text.compare(a[0], b[0]))
+      .map(([value, n]) => ({ value, label: value, count: n }));
 
   const decades = tally(without("decade"), (r) => decadeOf(r.year));
   const yesNo = (key: "spotify" | "paid", has: (r: ListedRecord) => boolean) => {
     const counts = tally(without(key), (r) => (has(r) ? "yes" : "no"));
-    return inOrder(YES_NO, counts, (v) => YES_NO_LABELS[key][v as "yes" | "no"]);
+    return inOrder(key, YES_NO, counts, (v) => YES_NO_LABELS[key][v as "yes" | "no"]);
   };
+  const anyStatus = without("status");
   return {
-    sleeve: inOrder(GRADES, tally(without("sleeve"), (r) => r.sleeve_condition)),
-    decade: inOrder([...decades.keys()].sort(), decades),
-    kind: inOrder(FORMAT_KINDS, tally(without("kind"), (_, f) => f.kind)),
-    discs: inOrder(DISCS, tally(without("discs"), (_, f) => discsBucket(f.discs)), (v) => DISC_LABELS[v as Exclude<Discs, "">]),
-    desc: byCount(tally(records.filter((r) => matches(r, s)), (_, f) => f.descriptors)),
-    label: byCount(tally(without("label"), (r) => r.label)),
-    genre: byCount(tally(without("genre"), (r) => r.genres)),
-    style: byCount(tally(without("style"), (r) => r.styles)),
+    grade: inOrder("grade", GRADES, tally(without("grade"), (r) => r.media_condition)),
+    status: STATUSES.map((o) => ({ value: o.value, label: o.label, count: anyStatus.filter((r) => matchesStatus(r, o.value)).length })).filter((o) => o.count > 0 || o.value === s.status),
+    sleeve: inOrder("sleeve", GRADES, tally(without("sleeve"), (r) => r.sleeve_condition)),
+    decade: inOrder("decade", [...new Set([...decades.keys(), ...chosen("decade")])].sort(), decades),
+    kind: inOrder("kind", FORMAT_KINDS, tally(without("kind"), (_, f) => f.kind)),
+    discs: inOrder("discs", DISCS, tally(without("discs"), (_, f) => discsBucket(f.discs)), (v) => DISC_LABELS[v as Exclude<Discs, "">]),
+    desc: byCount("desc", tally(records.filter((r) => matches(r, s)), (_, f) => f.descriptors)),
+    label: byCount("label", tally(without("label"), (r) => r.label)),
+    genre: byCount("genre", tally(without("genre"), (r) => r.genres)),
+    style: byCount("style", tally(without("style"), (r) => r.styles)),
     spotify: yesNo("spotify", (r) => r.spotify_album_id !== null),
     paid: yesNo("paid", (r) => r.purchase_price_minor !== null),
-    move: inOrder(MOVES, tally(without("move"), (r) => (r.change_minor === null ? null : r.change_minor > 0 ? "up" : r.change_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
-    gain: inOrder(GAIN_DIRS, tally(without("gain"), (r) => (r.gain_minor === null ? null : r.gain_minor > 0 ? "up" : r.gain_minor < 0 ? "down" : null)), (v) => GAIN_LABELS[v as Exclude<GainDir, "">]),
-    how: inOrder(HOWS, tally(without("how"), (r) => (r.current_method === "price_suggestion" ? "suggestion" : r.current_method === "lowest_listing" ? "listing" : null)), (v) => HOW_LABELS[v as Exclude<How, "">]),
+    move: inOrder("move", MOVES, tally(without("move"), (r) => (r.change_minor === null ? null : r.change_minor > 0 ? "up" : r.change_minor < 0 ? "down" : "flat")), (v) => MOVE_LABELS[v as Exclude<Move, "">]),
+    gain: inOrder("gain", GAIN_DIRS, tally(without("gain"), (r) => (r.gain_minor === null ? null : r.gain_minor > 0 ? "up" : r.gain_minor < 0 ? "down" : null)), (v) => GAIN_LABELS[v as Exclude<GainDir, "">]),
+    how: inOrder("how", HOWS, tally(without("how"), (r) => (r.current_method === "price_suggestion" ? "suggestion" : r.current_method === "lowest_listing" ? "listing" : null)), (v) => HOW_LABELS[v as Exclude<How, "">]),
+    scarce: inOrder("scarce", ["yes"], tally(without("scarce"), (r) => (isScarce(r) ? "yes" : null)), () => SCARCE_LABEL),
   };
 }
 
@@ -498,7 +578,11 @@ export interface ActiveFilter {
   next: Selection;
 }
 
-/** The narrow filters in force, as chips: what each says, and the selection without it. `over` is how the change window reads: "in 30 days". */
+/**
+ * The filters in force, as chips: what each says, and the selection without it. `over` is how
+ * the change window reads: "in 30 days". The filter a tab stands for is left out, since the tab
+ * already says it.
+ */
 export function activeFilters(s: Selection, money: (major: number) => string, over = "in 30 days"): ActiveFilter[] {
   const out: ActiveFilter[] = [];
   const add = (key: string, label: string, reset: Partial<Selection>) => out.push({ key, label, next: { ...s, ...reset } });
@@ -510,6 +594,7 @@ export function activeFilters(s: Selection, money: (major: number) => string, ov
   if (s.kind) add("kind", s.kind, { kind: "" });
   if (s.discs) add("discs", DISC_LABELS[s.discs], { discs: "" });
   for (const d of s.desc) add(`desc:${d}`, d, { desc: s.desc.filter((x) => x !== d) });
+  if (s.grade) add("grade", `Media ${s.grade}`, { grade: "" });
   if (s.sleeve) add("sleeve", `Sleeve ${s.sleeve}`, { sleeve: "" });
   if (s.spotify) add("spotify", YES_NO_LABELS.spotify[s.spotify], { spotify: "" });
   if (s.paid) add("paid", YES_NO_LABELS.paid[s.paid], { paid: "" });
@@ -519,9 +604,14 @@ export function activeFilters(s: Selection, money: (major: number) => string, ov
   if (s.move) add("move", `${MOVE_LABELS[s.move]} ${over}`, { move: "" });
   if (s.gain) add("gain", GAIN_LABELS[s.gain], { gain: "" });
   if (s.how) add("how", `Priced from ${s.how === "suggestion" ? "a suggestion" : "a listing"}`, { how: "" });
-  if (s.scarce) add("scarce", `${SCARCE_COPIES} or fewer for sale`, { scarce: false });
-  return out;
+  if (s.scarce) add("scarce", SCARCE_LABEL, { scarce: false });
+  if (s.status !== DEFAULT_SELECTION.status) add("status", STATUSES.find((o) => o.value === s.status)!.label, { status: DEFAULT_SELECTION.status });
+  if (s.todo) add("todo", "To do", { todo: false });
+  const shownByTab = Object.keys(tabOf(s).filter);
+  return out.filter((f) => !shownByTab.includes(f.key));
 }
+
+// --- Named views: presets other pages link into, and the tabs built from them -----------------
 
 export interface QuickFilter {
   id: string;
@@ -530,7 +620,7 @@ export interface QuickFilter {
   preset: Partial<Selection>;
 }
 
-/** Views a collector keeps coming back to. One click applies one; a second click takes it off. */
+/** Views a collector keeps coming back to. The Overview links into them; the Collection page shows two as tabs. */
 export const QUICK_FILTERS: readonly QuickFilter[] = [
   { id: "valuable", label: "Most valuable", preset: { status: "priced", sort: "value", dir: "desc" } },
   { id: "risers", label: "Biggest risers", preset: { move: "up", sort: "change", dir: "desc" } },
@@ -541,15 +631,51 @@ export const QUICK_FILTERS: readonly QuickFilter[] = [
   { id: "scarce", label: "Scarce", preset: { scarce: true, sort: "forsale", dir: "asc" } },
 ];
 
-const presetKeys = (f: QuickFilter) => Object.keys(f.preset) as (keyof Selection)[];
+export type TabId = "all" | "risers" | "fallers" | "todo";
 
-export function quickFilterActive(s: Selection, f: QuickFilter): boolean {
-  return presetKeys(f).every((k) => String(s[k]) === String(f.preset[k]));
+export interface Tab {
+  id: TabId;
+  label: string;
+  /** What the tab narrows to. It is in force while every part of it is. */
+  filter: Partial<Selection>;
+  /** The order the tab brings with it, if any. */
+  order?: Pick<Selection, "sort" | "dir">;
 }
 
-/** Apply a quick filter, or take it off again when it is already in force. */
-export function toggleQuickFilter(s: Selection, f: QuickFilter): Selection {
-  if (!quickFilterActive(s, f)) return { ...s, ...f.preset };
-  const reset = Object.fromEntries(presetKeys(f).map((k) => [k, DEFAULT_SELECTION[k]])) as Partial<Selection>;
-  return { ...s, ...reset };
+/** A quick filter as a tab: its order apart from what it narrows to. */
+function fromQuickFilter(id: string): Pick<Tab, "filter" | "order"> {
+  const { sort, dir, ...filter } = QUICK_FILTERS.find((f) => f.id === id)!.preset;
+  return sort && dir ? { filter, order: { sort, dir } } : { filter };
+}
+
+export const TABS: readonly Tab[] = [
+  { id: "all", label: "All", filter: {} },
+  { id: "risers", label: "Risers", ...fromQuickFilter("risers") },
+  { id: "fallers", label: "Fallers", ...fromQuickFilter("fallers") },
+  { id: "todo", label: "To do", filter: { todo: true } },
+];
+
+const ALL_TAB = TABS[0]!;
+
+function inForce(s: Selection, tab: Tab): boolean {
+  const keys = Object.keys(tab.filter) as (keyof Selection)[];
+  return keys.length > 0 && keys.every((k) => String(s[k]) === String(tab.filter[k]));
+}
+
+/** The tab a selection is on: the first whose filter is in force, or All. */
+export function tabOf(s: Selection): Tab {
+  return TABS.find((t) => inForce(s, t)) ?? ALL_TAB;
+}
+
+/**
+ * Move to a tab. The old tab's filter comes off, and so does its order unless the collector has
+ * since chosen another; the new tab's filter and order go on. Search and every other filter stay.
+ */
+export function chooseTab(s: Selection, id: TabId): Selection {
+  const from = tabOf(s);
+  const to = TABS.find((t) => t.id === id) ?? ALL_TAB;
+  if (from.id === to.id) return s;
+  const off = Object.fromEntries(Object.keys(from.filter).map((k) => [k, DEFAULT_SELECTION[k as keyof Selection]])) as Partial<Selection>;
+  const orderOff = from.order && s.sort === from.order.sort && s.dir === from.order.dir ? { sort: DEFAULT_SELECTION.sort, dir: DEFAULT_SELECTION.dir } : {};
+  return { ...s, ...off, ...orderOff, ...to.filter, ...to.order };
 }
