@@ -14,6 +14,11 @@
 
 A serverless app that keeps my vinyl collection, prices each record from the Discogs market, and always knows what the whole thing is worth. One Cloudflare Worker, one SQLite database, a React dashboard, nothing to pay.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/covers-dark.webp">
+  <img alt="The collection as a wall of album covers, each with its current value in the corner" src="docs/screenshots/covers-light.webp">
+</picture>
+
 > [!NOTE]
 > **Live since 2 October 2026**, behind a Cloudflare Access login. 163 records, synced from Discogs daily and priced at Discogs' suggestion for each record's grade. Every record is still on the default grade, VG+, until I grade them.
 
@@ -34,6 +39,34 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 | Record | Price history beside the cheapest copy for sale, Discogs' price at every grade, rank in the collection, yearly gain, more by the same artist or label. |
 | Insights | Value by decade, format, grade, genre, label or artist; price bands; how the collection grew. Built from data the table already loaded, so no extra reads. |
 | Sync | Run or preview a Discogs sync. |
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/collection-dark.webp">
+        <img alt="The collection table, filtered to the 1980s, with the filter panel open" src="docs/screenshots/collection-light.webp">
+      </picture>
+      <p align="center"><b>Collection</b><br><sub>Filters, totals, grading in place</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/record-dark.webp">
+        <img alt="A record page: its rank in the collection, its value, and Discogs' price at every grade" src="docs/screenshots/record-light.webp">
+      </picture>
+      <p align="center"><b>Record</b><br><sub>Rank, value, price at every grade</sub></p>
+    </td>
+    <td width="33%" valign="top">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/insights-dark.webp">
+        <img alt="The Insights page: summary tiles and the collection counted by decade" src="docs/screenshots/insights-light.webp">
+      </picture>
+      <p align="center"><b>Insights</b><br><sub>Where the value sits</sub></p>
+    </td>
+  </tr>
+</table>
+
+<sub>Screenshots of my real collection. The total and the most valuable records are kept out of them, and the figures that would add up to the total are blurred.</sub>
 
 ## How it works
 
@@ -340,6 +373,7 @@ The tunnel road came later: see [The road to Discogs](#the-road-to-discogs).
 index.html       the dashboard's page; Vite builds it with web/
 web/             the dashboard: React pages, API client, styles
 public/          served as-is: icon, security headers
+docs/screenshots the images in this README, light and dark
 src/
   index.ts       Worker entry: fetch → API, scheduled → pricing job or daily sync
   app.ts         routes, validation, authentication
