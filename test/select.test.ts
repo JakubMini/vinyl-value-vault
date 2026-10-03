@@ -10,6 +10,7 @@ import {
   facetOptions,
   matches,
   parseFormat,
+  QUICK_FILTERS,
   readSelection,
   type Selection,
   sortRecords,
@@ -311,6 +312,19 @@ describe("the narrow filters", () => {
     const expected: Record<string, number[]> = { all: [2, 1, 3, 4], risers: [1], fallers: [2], todo: [2, 3, 4] };
     for (const tab of TABS) {
       expect(applySelection(rows, chooseTab(select({}), tab.id)).map((r) => r.id), tab.id).toEqual(expected[tab.id]);
+    }
+  });
+
+  it("every quick filter other pages link into shows something sensible on a mixed collection", () => {
+    const expected: Record<string, number[]> = { valuable: [2, 1, 3], risers: [1], fallers: [2], waiting: [4], "no-spotify": [2, 3, 4], bargains: [1], scarce: [3] };
+    for (const f of QUICK_FILTERS) {
+      expect(applySelection(rows, select(f.preset)).map((r) => r.id), f.id).toEqual(expected[f.id]);
+    }
+  });
+
+  it("builds the risers and fallers tabs from the quick filters of the same name", () => {
+    for (const id of ["risers", "fallers"] as const) {
+      expect(chooseTab(select({}), id)).toEqual(select(QUICK_FILTERS.find((f) => f.id === id)!.preset));
     }
   });
 

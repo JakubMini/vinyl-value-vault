@@ -611,7 +611,25 @@ export function activeFilters(s: Selection, money: (major: number) => string, ov
   return out.filter((f) => !shownByTab.includes(f.key));
 }
 
-// --- Tabs: the few views a collector keeps coming back to -----------------------------------
+// --- Named views: presets other pages link into, and the tabs built from them -----------------
+
+export interface QuickFilter {
+  id: string;
+  label: string;
+  /** What it sets. Everything else in the selection is left as it was, so a search stays a search. */
+  preset: Partial<Selection>;
+}
+
+/** Views a collector keeps coming back to. The Overview links into them; the Collection page shows two as tabs. */
+export const QUICK_FILTERS: readonly QuickFilter[] = [
+  { id: "valuable", label: "Most valuable", preset: { status: "priced", sort: "value", dir: "desc" } },
+  { id: "risers", label: "Biggest risers", preset: { move: "up", sort: "change", dir: "desc" } },
+  { id: "fallers", label: "Biggest fallers", preset: { move: "down", sort: "change", dir: "asc" } },
+  { id: "waiting", label: "Needs a price", preset: { status: "waiting" } },
+  { id: "no-spotify", label: "No Spotify yet", preset: { spotify: "no" } },
+  { id: "bargains", label: "Bought for less than worth", preset: { gain: "up", sort: "gain", dir: "desc" } },
+  { id: "scarce", label: "Scarce", preset: { scarce: true, sort: "forsale", dir: "asc" } },
+];
 
 export type TabId = "all" | "risers" | "fallers" | "todo";
 
@@ -624,10 +642,16 @@ export interface Tab {
   order?: Pick<Selection, "sort" | "dir">;
 }
 
+/** A quick filter as a tab: its order apart from what it narrows to. */
+function fromQuickFilter(id: string): Pick<Tab, "filter" | "order"> {
+  const { sort, dir, ...filter } = QUICK_FILTERS.find((f) => f.id === id)!.preset;
+  return sort && dir ? { filter, order: { sort, dir } } : { filter };
+}
+
 export const TABS: readonly Tab[] = [
   { id: "all", label: "All", filter: {} },
-  { id: "risers", label: "Risers", filter: { move: "up" }, order: { sort: "change", dir: "desc" } },
-  { id: "fallers", label: "Fallers", filter: { move: "down" }, order: { sort: "change", dir: "asc" } },
+  { id: "risers", label: "Risers", ...fromQuickFilter("risers") },
+  { id: "fallers", label: "Fallers", ...fromQuickFilter("fallers") },
   { id: "todo", label: "To do", filter: { todo: true } },
 ];
 
