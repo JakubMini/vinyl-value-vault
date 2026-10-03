@@ -352,6 +352,15 @@
   .row-artist {
     max-width: calc(100vw - 260px);
   }
+  /* A name cut after a dozen characters says too little; let it take two lines. */
+  .row-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* --- What is ticked ------------------------------------------------------------------------- */
