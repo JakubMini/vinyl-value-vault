@@ -1,7 +1,7 @@
 /**
  * Signing in through Cloudflare Access.
  *
- * With Access switched on for the workers.dev hostname, a browser only reaches the Worker
+ * With Access switched on for the vault's hostnames, a browser only reaches the Worker
  * after logging in, and every request carries a signed JWT in Cf-Access-Jwt-Assertion. The
  * Worker still verifies it: Access can be switched off, or misconfigured, and a header on its
  * own proves nothing.
