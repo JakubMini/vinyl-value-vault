@@ -1,11 +1,12 @@
 /** The window a change is measured over. One `range` parameter, shared by the Overview and the Collection. */
 
+/** `short` labels the chart pickers, which sit in a card's header; screen readers get `label`. */
 export const RANGES = [
-  { value: "7", label: "7 days", period: "7 days", days: 7 },
-  { value: "30", label: "30 days", period: "30 days", days: 30 },
-  { value: "90", label: "90 days", period: "90 days", days: 90 },
-  { value: "365", label: "1 year", period: "a year", days: 365 },
-  { value: "all", label: "All time", period: "all time", days: 3650 },
+  { value: "7", label: "7 days", short: "7d", period: "7 days", days: 7 },
+  { value: "30", label: "30 days", short: "30d", period: "30 days", days: 30 },
+  { value: "90", label: "90 days", short: "90d", period: "90 days", days: 90 },
+  { value: "365", label: "1 year", short: "1y", period: "a year", days: 365 },
+  { value: "all", label: "All time", short: "All", period: "all time", days: 3650 },
 ] as const;
 
 export type Range = (typeof RANGES)[number];

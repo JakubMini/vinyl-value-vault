@@ -11,9 +11,6 @@ import { useCollection, useRecords } from "../queries";
 import { over, RANGES, type Range, readRange, withRange } from "../range";
 import "../overview.css";
 
-/** The chart's windows, short enough to sit in the card's header. Screen readers get the full words. */
-const SHORT: Record<Range["value"], string> = { "7": "7d", "30": "30d", "90": "90d", "365": "1y", all: "All" };
-
 const preset = (id: string): Partial<Selection> => QUICK_FILTERS.find((f) => f.id === id)?.preset ?? {};
 
 /** The collection narrowed to a selection, measuring change over the same window as this page. */
@@ -94,7 +91,7 @@ export function Overview() {
       <div className="card">
         <div className="row-between">
           <h2 className="card-title">Value over time</h2>
-          <div className="segmented ov-compact" role="group" aria-label="Time range">
+          <div className="segmented compact" role="group" aria-label="Time range">
             {RANGES.map((r) => (
               <button
                 key={r.value}
@@ -103,7 +100,7 @@ export function Overview() {
                 aria-label={r.label}
                 onClick={() => setParams((prev) => withRange(prev, r))}
               >
-                {SHORT[r.value]}
+                {r.short}
               </button>
             ))}
           </div>

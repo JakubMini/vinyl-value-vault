@@ -36,8 +36,8 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 | --- | --- |
 | Overview | Total value, what price moves did to it (a week to all time), a chart of it over time, biggest risers and fallers. Gain on what I paid, and records waiting for a price, appear only when there are some. |
 | Collection | A table or a wall of covers. Sort, search, filter by grade, decade, format, genre, label, value and more. Totals follow the filter, and the filter lives in the URL. Pick columns, export CSV, grade in place, re-price whatever is ticked. |
-| Record | Price history beside the cheapest copy for sale, Discogs' price at every grade, rank in the collection, yearly gain, more by the same artist or label. |
-| Insights | Value by decade, format, grade, genre, label or artist; price bands; how the collection grew. Built from data the table already loaded, so no extra reads. |
+| Record | The value first, with its rank in the collection. Price history beside the cheapest copy for sale, and Discogs' price at my grade and the grades either side (all eight a click away). My copy in one line: grades, what I paid, the yearly gain. One click opens the form to grade it. A compact Spotify player, more by the same artist or label, and re-pricing and deleting in a ⋯ menu. |
+| Insights | A row of headline figures, most of them links into the collection. Value by decade, format, grade, genre, style, label or artist; price bands; how the collection grew, once records have joined on more than one day. Built from data the table already loaded, so no extra reads. |
 | Sync | Run or preview a Discogs sync, and see the recent ones. A dot in the header, on every page, says how the last one went. |
 
 <table>
