@@ -1,0 +1,197 @@
+/*
+ * The Overview: one number, one chart, the records that moved. Everything else on the page
+ * appears only when it has something to say. Tokens from styles.css only.
+ */
+
+/* The total, with how it moved beside it and the counts on the right. */
+
+.ov-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+
+.ov-label {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.ov-figure {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 4px;
+}
+
+.ov-total {
+  font-size: 56px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ov-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.ov-pill-up {
+  color: var(--good);
+  background: var(--good-wash);
+}
+
+.ov-pill-down {
+  color: var(--critical);
+  background: var(--critical-wash);
+}
+
+.ov-pill-flat {
+  color: var(--ink-2);
+  background: var(--hover);
+}
+
+.ov-pill-quiet {
+  color: var(--ink-2);
+  border-color: var(--border);
+  font-weight: 500;
+}
+
+.ov-pill-quiet .change-up,
+.ov-pill-quiet .change-down {
+  font-weight: 600;
+}
+
+a.ov-pill:hover {
+  border-color: currentColor;
+}
+
+.ov-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding-bottom: 6px;
+  color: var(--ink-2);
+  font-size: 14px;
+  text-align: right;
+}
+
+.ov-meta-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ov-meta-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ov-waiting {
+  color: var(--warning);
+  font-weight: 550;
+  text-decoration: none;
+}
+
+.ov-waiting:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* The chart's window, small enough for the card's header. */
+
+.segmented.ov-compact button {
+  padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Risers and fallers: one card, a tab each. */
+
+.ov-tabs {
+  display: flex;
+  gap: 20px;
+}
+
+.ov-tab {
+  font: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink-muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 2px 0 4px;
+  cursor: pointer;
+}
+
+.ov-tab:hover {
+  color: var(--ink);
+}
+
+.ov-tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.ov-more {
+  color: var(--ink-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.ov-more:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Narrow: the counts go under the total, on one line, separated by dots. */
+@media (max-width: 640px) {
+  .ov-total {
+    font-size: 44px;
+  }
+
+  .ov-meta {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 0;
+    padding-bottom: 0;
+    text-align: left;
+  }
+
+  .ov-meta > * + *::before {
+    content: "·";
+    margin: 0 8px;
+    color: var(--ink-muted);
+  }
+}
+
+@media (max-width: 400px) {
+  .ov-total {
+    font-size: 40px;
+  }
+}

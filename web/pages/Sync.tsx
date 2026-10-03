@@ -3,6 +3,11 @@ import { ErrorState, Loading, StatusBadge, When } from "../components";
 import { count } from "../format";
 import { useSync, useSyncRuns } from "../queries";
 
+/** Why a run stopped, without repeating "Stopped early", which its status already says. */
+function reason(run: SyncRun): string {
+  return (run.note ?? "").replace(/^Stopped early:\s*/, "");
+}
+
 export function Sync() {
   const runs = useSyncRuns();
   const sync = useSync();
@@ -14,11 +19,7 @@ export function Sync() {
     <section className="stack">
       <div>
         <h1>Sync with Discogs</h1>
-        <p className="muted measure">
-          Discogs owns what each pressing is: title, artist, label, format, cover. The vault owns what you say about your copy:
-          grades, notes, what you paid. A sync adds new records, refreshes the Discogs details of the rest, and flags records that
-          have left your collection. It never changes a grade. The vault also syncs itself once a day.
-        </p>
+        <p className="muted measure">Discogs owns what a pressing is; the vault owns what you say about your copy. Syncs run daily.</p>
       </div>
 
       <div className="actions">
@@ -74,7 +75,7 @@ function RunResult({ run }: { run: SyncRun }) {
           </div>
         ))}
       </dl>
-      {run.note ? <p className="note">{run.note}</p> : null}
+      {run.note ? <p className="note">{reason(run)}</p> : null}
       {run.dry_run && run.status === "ok" ? <p className="muted">Nothing was written. Sync now to apply it.</p> : null}
     </div>
   );
@@ -117,7 +118,7 @@ function RunLog({ runs }: { runs: SyncRun[] }) {
               <td className="num">{count(run.added)}</td>
               <td className="num">{count(run.updated)}</td>
               <td className="num">{count(run.removed)}</td>
-              <td className="note-cell">{run.note ?? ""}</td>
+              <td className="note-cell">{reason(run)}</td>
             </tr>
           ))}
         </tbody>
