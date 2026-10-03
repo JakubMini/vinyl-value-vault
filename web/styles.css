@@ -444,12 +444,6 @@ nav {
   white-space: nowrap;
 }
 
-.filters {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .input {
   font: inherit;
   color: var(--ink);
@@ -458,10 +452,6 @@ nav {
   border-radius: 8px;
   padding: 7px 10px;
   min-height: 38px;
-}
-
-.filters input[type="search"] {
-  flex: 1 1 280px;
 }
 
 .sort {
@@ -517,15 +507,6 @@ th[aria-sort="descending"] {
   cursor: not-allowed;
 }
 
-.bulk {
-  align-items: center;
-}
-
-.bulk [role="status"] {
-  margin: 0;
-  flex: 1 1 280px;
-}
-
 .thumb {
   display: block;
   width: 40px;
@@ -560,23 +541,6 @@ th[aria-sort="descending"] {
 
 .records tr.gone td {
   opacity: 0.6;
-}
-
-.grade {
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 3px 4px;
-  cursor: pointer;
-}
-
-.grade:hover,
-.grade:focus-visible {
-  border-color: var(--border);
-  background: var(--surface-raised);
 }
 
 .strong {
@@ -978,10 +942,6 @@ th[aria-sort="descending"] {
 
 /* --- Narrowing the collection ---------------------------------------------------------- */
 
-.filter-area {
-  display: grid;
-  gap: 10px;
-}
 .pill {
   display: inline-flex;
   align-items: center;
@@ -994,18 +954,6 @@ th[aria-sort="descending"] {
   font-weight: 600;
   color: var(--on-accent);
   background: var(--accent);
-}
-.facet-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px 12px;
-  padding: 12px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-.facet-panel[hidden] {
-  display: none;
 }
 .facet {
   display: flex;
@@ -1021,9 +969,6 @@ th[aria-sort="descending"] {
   padding: 5px 8px;
   width: 100%;
 }
-.facet-wide {
-  grid-column: 1 / -1;
-}
 .money-range {
   display: flex;
   align-items: center;
@@ -1033,7 +978,6 @@ th[aria-sort="descending"] {
   min-width: 0;
 }
 .toggles,
-.quick,
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -1117,27 +1061,12 @@ a.chip {
 .totals {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 2px 10px;
   margin: 0;
-  justify-content: flex-end;
-  text-align: right;
-}
-.totals strong {
-  color: var(--ink);
-  font-weight: 600;
 }
 .totals > span + span::before {
   content: "·";
-  margin-right: 14px;
-}
-@media (max-width: 640px) {
-  .totals {
-    justify-content: flex-start;
-    text-align: left;
-  }
-  .totals > span + span::before {
-    content: none;
-  }
+  margin-right: 10px;
 }
 
 .scarce {
@@ -1223,46 +1152,7 @@ a.bar-row:hover .bar-fill {
   }
 }
 
-/* --- Table tools: a columns menu ------------------------------------------------------- */
-
-.menu {
-  position: relative;
-}
-.menu > summary {
-  list-style: none;
-}
-.menu > summary::-webkit-details-marker {
-  display: none;
-}
-.menu-panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 5;
-  min-width: 200px;
-  display: grid;
-  gap: 2px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-}
-.menu-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-.menu-option:hover {
-  background: var(--hover);
-}
-.menu-option input {
-  accent-color: var(--accent);
-}
+/* --- Table tools: the columns menu, the toolbar and the drawer live in collection.css ---- */
 
 /* --- The cover wall --------------------------------------------------------------------- */
 

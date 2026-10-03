@@ -1,0 +1,542 @@
+/*
+ * The collection page: one toolbar, every filter in a drawer, quiet rows, and a bar for what is
+ * ticked. Colours come from the tokens in styles.css. Rules sit under .collection, so they win
+ * over the shared ones they adjust whatever order the stylesheets load in.
+ */
+
+.collection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* --- Title, with what the rows add up to beside it ------------------------------------------ */
+
+.collection-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+.collection-head h1 {
+  margin: 0;
+}
+.collection .totals {
+  color: var(--ink-2);
+}
+.collection .totals-value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- Tabs ------------------------------------------------------------------------------------ */
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 6px 10px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.view-tab:hover {
+  color: var(--ink);
+}
+.view-tab[aria-pressed="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.tab-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  color: var(--ink-2);
+  background: var(--hover);
+}
+
+/* --- The toolbar ----------------------------------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar-search {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.toolbar-search .input {
+  width: 100%;
+}
+.collection .toolbar .button {
+  min-height: 38px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.collection .tool-icon {
+  justify-content: center;
+  min-width: 38px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.sort-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sort-label {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.sort-control select {
+  max-width: 11em;
+}
+
+.view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--page);
+}
+.view-toggle button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ink-muted);
+  background: none;
+  cursor: pointer;
+}
+.view-toggle button:hover {
+  color: var(--ink);
+}
+.view-toggle button[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+/* A phone: search and Filters on one line, the order, the view and the rest on the next. */
+@media (max-width: 640px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "search search filters"
+      "sort view more";
+  }
+  .toolbar-search {
+    grid-area: search;
+  }
+  .toolbar-filters {
+    grid-area: filters;
+  }
+  .sort-control {
+    grid-area: sort;
+    min-width: 0;
+  }
+  .sort-control select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .view-toggle {
+    grid-area: view;
+  }
+  .toolbar-more {
+    grid-area: more;
+    justify-self: end;
+  }
+  .sort-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* --- Menus ------------------------------------------------------------------------------------ */
+
+.cmenu {
+  position: relative;
+  display: inline-block;
+}
+.cmenu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 200px;
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.cmenu-panel:focus {
+  outline: none;
+}
+.cmenu-end {
+  right: 0;
+}
+.cmenu-start {
+  left: 0;
+}
+.cmenu-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+.cmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cmenu-item:hover:not(:disabled),
+.cmenu-item:focus {
+  background: var(--hover);
+  outline: none;
+}
+.cmenu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.cmenu-item:disabled {
+  color: var(--ink-muted);
+  cursor: default;
+}
+.cmenu-check {
+  width: 1em;
+  color: var(--accent-ink);
+}
+.cmenu-heading {
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+.cmenu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--hairline);
+}
+.caret {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+/* --- Chips in force, and what an action did --------------------------------------------------- */
+
+.collection-notice {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.collection-notice:empty {
+  display: none;
+}
+.collection-notice.is-error {
+  color: var(--critical);
+}
+
+/* --- Quiet rows ------------------------------------------------------------------------------- */
+
+.collection .records-wrap {
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.collection .records td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.collection .records tbody tr:hover td,
+.collection .records tr.is-ticked td {
+  background: var(--hover);
+}
+/* The record takes whatever room the other columns leave; a long name is cut short to fit. */
+.collection .record-cell {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+.row-title,
+.row-artist {
+  max-width: min(480px, calc(100vw - 480px));
+}
+.row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+  color: var(--ink);
+  text-decoration: none;
+}
+.row-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.row-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+.collection .spotify-col {
+  width: 40px;
+  padding-left: 0;
+  text-align: right;
+}
+.spotify-link {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--ink-muted);
+}
+.spotify-link:hover {
+  color: var(--good);
+  background: var(--hover);
+}
+/* Narrow screens drop the year and the change, then the Spotify link; the name gets what is left. */
+@media (max-width: 760px) {
+  .row-title,
+  .row-artist {
+    max-width: calc(100vw - 300px);
+  }
+}
+@media (max-width: 520px) {
+  .collection .spotify-col {
+    display: none;
+  }
+  .row-title,
+  .row-artist {
+    max-width: calc(100vw - 260px);
+  }
+}
+
+/* --- What is ticked ------------------------------------------------------------------------- */
+
+.selection-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 15;
+  align-self: center;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.selection-count {
+  margin-right: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.selection-bar .button {
+  min-height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* --- The filter drawer ------------------------------------------------------------------------ */
+
+/* A side sheet on the right; the whole screen on a phone. */
+.filter-drawer {
+  margin: 0 0 0 auto;
+  padding: 0;
+  width: min(420px, 100vw);
+  max-width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.16);
+}
+/* The backdrop does not see the page's tokens in every browser, so it is plain shade. */
+.filter-drawer::backdrop {
+  background: rgba(0, 0, 0, 0.32);
+}
+.filter-drawer[open] {
+  animation: drawer-in 0.18s ease-out;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .filter-drawer[open] {
+    animation: none;
+  }
+}
+@media (max-width: 640px) {
+  .filter-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+}
+body:has(.filter-drawer[open]) {
+  overflow: hidden;
+}
+
+.drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+.drawer-head h2 {
+  margin: 0;
+}
+.drawer-close {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.drawer-close:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 20px 16px;
+}
+.drawer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--hairline);
+}
+.drawer-foot .button-primary {
+  flex: 0 1 auto;
+}
+
+/* Folds: a header that says what is set inside, and the criteria under it. */
+.fsec {
+  border-bottom: 1px solid var(--hairline);
+}
+.fsec h3 {
+  margin: 0;
+  font-size: inherit;
+}
+.fsec-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 0;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.fsec-title {
+  flex: none;
+  font-weight: 600;
+}
+.fsec-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 13px;
+  color: var(--accent-ink);
+}
+.fsec-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 3px auto;
+  border-right: 1.5px solid var(--ink-muted);
+  border-bottom: 1.5px solid var(--ink-muted);
+  transform: rotate(45deg);
+}
+.fsec-summary + .fsec-chevron {
+  margin-left: 0;
+}
+.fsec-head[aria-expanded="true"] .fsec-chevron {
+  margin-bottom: -3px;
+  transform: rotate(-135deg);
+}
+.fsec-body {
+  display: grid;
+  gap: 14px;
+  padding: 0 0 18px;
+}
+.fsec-body[hidden] {
+  display: none;
+}

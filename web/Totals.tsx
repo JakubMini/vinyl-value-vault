@@ -3,28 +3,28 @@ import { totals } from "../src/select";
 import { MoneyChange } from "./components";
 import { count, formatMinor, plural } from "./format";
 
-/** What the rows on screen add up to, so a filter answers "what is this part of the collection worth?" */
+/**
+ * What the rows on screen add up to, beside the page title: "43 of 163 records · £812.40". The
+ * change and the gain on what was paid appear only when there is one.
+ */
 export function Totals({ shown, all, currency, over }: { shown: ListedRecord[]; all: number; currency: string; over: string }) {
   const t = totals(shown, currency);
   return (
-    <p className="totals muted" aria-live="polite">
-      <span>
-        {count(t.count)} of {count(all)} records
-      </span>
+    <p className="totals" aria-live="polite">
+      <span>{t.count === all ? plural(all, "record") : `${count(t.count)} of ${plural(all, "record")}`}</span>
       {t.priced > 0 ? (
-        <span>
-          worth <strong>{formatMinor(t.value_minor, currency)}</strong>
-          {t.priced < t.count ? ` across the ${count(t.priced)} priced` : ""}
+        <span className="totals-value" title={t.priced < t.count ? `Across the ${count(t.priced)} priced` : undefined}>
+          {formatMinor(t.value_minor, currency)}
         </span>
       ) : null}
-      {t.change_minor !== null ? (
+      {t.change_minor ? (
         <span>
           <MoneyChange minor={t.change_minor} currency={currency} /> {over}
         </span>
       ) : null}
-      {t.gain_minor !== null ? (
-        <span>
-          <MoneyChange minor={t.gain_minor} currency={currency} /> on {plural(t.paid, "record")} with a price paid
+      {t.gain_minor ? (
+        <span title={`On ${plural(t.paid, "record")} with a price paid`}>
+          <MoneyChange minor={t.gain_minor} currency={currency} /> on cost
         </span>
       ) : null}
     </p>
