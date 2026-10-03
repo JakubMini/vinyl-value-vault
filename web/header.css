@@ -1,0 +1,53 @@
+/* The header's sync status: a dot and a few words, on the right. Layout of the bar itself is in styles.css. */
+
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sync-status:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.sync-status.active {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.sync-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-muted);
+  box-shadow: 0 0 0 3px var(--hover);
+}
+
+.sync-dot-good {
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-wash);
+}
+
+.sync-dot-warning {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px var(--warning-wash);
+}
+
+/* Narrow: only the dot. The link's aria-label still says what it means. */
+@media (max-width: 720px) {
+  .sync-status {
+    padding: 10px;
+  }
+
+  .sync-status-text {
+    display: none;
+  }
+}

@@ -118,11 +118,11 @@ p {
   padding: 0 16px;
 }
 
+/* Brand and pages on the left, the sync status on the right. */
 .topbar-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 8px 24px;
   min-height: 56px;
   flex-wrap: wrap;
 }
@@ -139,6 +139,27 @@ p {
 nav {
   display: flex;
   gap: 4px;
+}
+
+.topbar nav {
+  margin-right: auto;
+}
+
+/* Narrow: brand and sync dot on the first row, the pages on a row of their own. */
+@media (max-width: 600px) {
+  .topbar-inner {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 52px auto;
+    gap: 0 12px;
+    padding-bottom: 8px;
+  }
+
+  .topbar nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0 0 0 -12px;
+  }
 }
 
 .nav-link {
