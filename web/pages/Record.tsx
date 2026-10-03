@@ -348,10 +348,16 @@ function History({ record: r }: { record: RecordDetail }) {
       <div className="row-between">
         <h2 className="card-title">Price history</h2>
         {all.length > 0 ? (
-          <div className="segmented" role="group" aria-label="Time range">
+          <div className="segmented compact" role="group" aria-label="Time range">
             {RANGES.map((o) => (
-              <button key={o.value} type="button" aria-pressed={o === range} onClick={() => setParams((prev) => withRange(prev, o), { replace: true })}>
-                {o.label}
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={o === range}
+                aria-label={o.label}
+                onClick={() => setParams((prev) => withRange(prev, o), { replace: true })}
+              >
+                {o.short}
               </button>
             ))}
           </div>

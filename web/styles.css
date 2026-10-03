@@ -864,6 +864,12 @@ th[aria-sort="descending"] {
   box-shadow: 0 0 0 1px var(--border);
 }
 
+/* A chart's window, short enough for a card's header. */
+.segmented.compact button {
+  padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* While a new range loads, the old chart stays, dimmed, instead of a blank or a jump. */
 .refetching {
   opacity: 0.55;
