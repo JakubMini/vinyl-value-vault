@@ -15,6 +15,8 @@ export interface Bar {
   to?: string | null;
   /** Drawn in the de-emphasis gray: a tail, a remainder. */
   muted?: boolean;
+  /** Hover text, for a row that needs a word of explanation, such as a folded remainder. */
+  title?: string;
 }
 
 export function BarChart({ bars, format, label }: { bars: Bar[]; format: (value: number) => string; label: string }) {
@@ -38,11 +40,11 @@ export function BarChart({ bars, format, label }: { bars: Bar[]; format: (value:
         return (
           <li key={b.key}>
             {b.to ? (
-              <Link to={b.to} className="bar-row">
+              <Link to={b.to} className="bar-row" title={b.title}>
                 {body}
               </Link>
             ) : (
-              <span className="bar-row">
+              <span className="bar-row" title={b.title}>
                 {body}
               </span>
             )}
