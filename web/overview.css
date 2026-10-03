@@ -120,13 +120,6 @@ a.ov-pill:hover {
   text-underline-offset: 2px;
 }
 
-/* The chart's window, small enough for the card's header. */
-
-.segmented.ov-compact button {
-  padding: 3px 9px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Risers and fallers: one card, a tab each. */
 
 .ov-tabs {

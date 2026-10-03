@@ -712,16 +712,7 @@ th[aria-sort="descending"] {
   text-decoration: underline;
 }
 
-.record-head {
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 24px;
-  align-items: start;
-}
-
-.record-head > div > * + * {
-  margin-top: 8px;
-}
+/* The header, the price card and the rows below are laid out in web/record.css. */
 
 .cover {
   width: 180px;
@@ -732,22 +723,10 @@ th[aria-sort="descending"] {
   border: 1px solid var(--border);
 }
 
-.record-artist {
-  font-size: 17px;
-  color: var(--ink-2);
-}
-
 .split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 12px;
-}
-
-.value-big {
-  font-size: 40px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
 }
 
 .ladder {
@@ -816,26 +795,6 @@ th[aria-sort="descending"] {
   border-color: var(--critical);
 }
 
-.danger {
-  padding-top: 8px;
-  border-top: 1px solid var(--hairline);
-}
-
-@media (max-width: 640px) {
-  .record-head {
-    grid-template-columns: 96px 1fr;
-    gap: 16px;
-  }
-
-  .cover {
-    width: 96px;
-  }
-
-  .value-big {
-    font-size: 32px;
-  }
-}
-
 /* Overview */
 
 .segmented {
@@ -867,6 +826,12 @@ th[aria-sort="descending"] {
   color: var(--ink);
   font-weight: 600;
   box-shadow: 0 0 0 1px var(--border);
+}
+
+/* A chart's window, short enough for a card's header. */
+.segmented.compact button {
+  padding: 3px 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* While a new range loads, the old chart stays, dimmed, instead of a blank or a jump. */
