@@ -305,7 +305,7 @@ curl -s -X POST http://localhost:5173/api/records \
 2. In Zero Trust → Access → Applications, open the new application. Its policy lets in members of my Cloudflare account. Copy its Application Audience (AUD) tag.
 3. Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc` and deploy. While either is empty, the Worker refuses every Access token and only the API key works.
 4. For scripts, create a service token under Access → Service Auth and allow it in the application's policies.
-5. For the custom domain, add `vault.jakubszypicyn.com` as another public hostname on that same application, not a new one. One application means one audience tag, so the Worker accepts a login from either address. A separate application would issue tokens the Worker refuses.
+5. Nothing to add for the custom domain. The application protects the Worker itself (an Access destination of type `worker`), not a list of hostnames, so `vault.jakubszypicyn.com` is covered the moment it exists, with the same audience tag. A separate application for it would issue tokens the Worker refuses.
 
 Then, for example, a dry-run sync:
 
