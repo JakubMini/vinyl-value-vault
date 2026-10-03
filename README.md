@@ -20,7 +20,7 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 </picture>
 
 > [!NOTE]
-> **Live since 2 October 2026**, behind a Cloudflare Access login. 163 records, synced from Discogs daily and priced at Discogs' suggestion for each record's grade. Every record is still on the default grade, VG+, until I grade them.
+> **Live since 2 October 2026** at [vault.jakubszypicyn.com](https://vault.jakubszypicyn.com), behind a Cloudflare Access login. 163 records, synced from Discogs daily and priced at Discogs' suggestion for each record's grade. Every record is still on the default grade, VG+, until I grade them.
 
 ## What it does
 
@@ -305,11 +305,12 @@ curl -s -X POST http://localhost:5173/api/records \
 2. In Zero Trust → Access → Applications, open the new application. Its policy lets in members of my Cloudflare account. Copy its Application Audience (AUD) tag.
 3. Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc` and deploy. While either is empty, the Worker refuses every Access token and only the API key works.
 4. For scripts, create a service token under Access → Service Auth and allow it in the application's policies.
+5. Nothing to add for the custom domain. The application protects the Worker itself (an Access destination of type `worker`), not a list of hostnames, so `vault.jakubszypicyn.com` is covered the moment it exists, with the same audience tag. A separate application for it would issue tokens the Worker refuses.
 
 Then, for example, a dry-run sync:
 
 ```bash
-curl -s -X POST "https://vinyl-value-vault.jakub-m-szypicyn.workers.dev/api/sync/discogs?dry_run=true" \
+curl -s -X POST "https://vault.jakubszypicyn.com/api/sync/discogs?dry_run=true" \
   -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
   -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
 ```
@@ -341,6 +342,8 @@ Before pushing, `npm run check` regenerates binding types, typechecks and runs t
 npm run deploy        # build the dashboard and the Worker, ship both
 npx wrangler tail     # stream the structured logs, one summary line per run
 ```
+
+The vault answers at `vault.jakubszypicyn.com`, a Workers Custom Domain declared in `wrangler.jsonc`: the deploy creates its DNS record and certificate. The domain is registered with Cloudflare on the same account. The old `workers.dev` address stays on, behind the same login, for scripts and the Alexa skill.
 
 <details>
 <summary>The first deploy</summary>

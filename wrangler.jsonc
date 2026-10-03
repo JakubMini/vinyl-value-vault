@@ -5,6 +5,15 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  // Where the vault answers. vault.jakubszypicyn.com is a Custom Domain (added 3 Oct 2026):
+  // Cloudflare creates its DNS record and certificate on deploy. The zone is on the same
+  // personal account. The Access application protects the Worker itself, not a hostname, so
+  // every address it answers on is behind the same login and the same audience tag (ACCESS_AUD
+  // below). Wrangler turns workers.dev off once a route exists unless told otherwise; it stays
+  // on for scripts and the Alexa skill.
+  "routes": [{ "pattern": "vault.jakubszypicyn.com", "custom_domain": true }],
+  "workers_dev": true,
+
   // The dashboard: a single-page app built by Vite into static assets. Asset requests are
   // served without running the Worker (free and unmetered); /api/* always reaches the Worker,
   // and any other unknown path gets index.html so client-side routes survive a reload.
@@ -38,8 +47,9 @@
     "VALUATION_REFRESH_HOURS": "24",
     "DISCOGS_USER_AGENT": "VinylValueVault/0.1 +https://github.com/JakubMini/vinyl-value-vault",
     // Cloudflare Access, which lets the dashboard in through a browser login (enabled on
-    // 2 Oct 2026 for workers.dev). The team domain issues the tokens and publishes their keys;
-    // the audience tag names this Access application. Neither is secret. If either is emptied,
+    // 2 Oct 2026; it protects the Worker on every hostname, vault.jakubszypicyn.com included).
+    // The team domain issues the tokens and publishes their keys; the audience tag names this
+    // Access application. Neither is secret. If either is emptied,
     // Access tokens are refused and only the API key works.
     "ACCESS_TEAM_DOMAIN": "https://nameless-sky-8a5a.cloudflareaccess.com",
     "ACCESS_AUD": "4f34a4445eb3398643394a2aab4782bf53eedb56e462df77a2fb9ef5cd0d5195"
