@@ -1,13 +1,15 @@
 /**
  * A small time-series chart in plain SVG: one value over time.
  *
- * Quiet by design: hairline gridlines, a 2px line, a 10% area wash down to zero, and the latest
- * value labelled at the end of the line. A crosshair snaps to the nearest point on hover, and
+ * Quiet by design: hairline gridlines, a 2px line, a 10% area wash down to the bottom of the plot,
+ * and the latest value labelled at the end of the line. The value axis is tight: it spans the
+ * values shown, not zero to the top, so small moves are visible. A crosshair snaps to the nearest point on hover, and
  * the arrow keys walk the points when the chart has focus. Every number is also in a table on
  * the same page, so the tooltip never holds information hostage. A second series, for context
  * rather than the point, is drawn dashed in grey on the same scale, with a legend.
  */
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { valueScale } from "../src/scale";
 
 export interface ChartPoint {
   t: number;
@@ -45,17 +47,6 @@ function tickFormat(span: number): (t: number) => string {
   return (t) => monthYear.format(t);
 }
 
-/** A round step for about `count` gridlines between zero and max. */
-function niceTicks(max: number, count = 4): number[] {
-  if (max <= 0) return [0, 1];
-  const raw = max / count;
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw) ?? 10 * magnitude;
-  const ticks: number[] = [];
-  for (let v = 0; v < max + step * 0.999; v += step) ticks.push(Math.round(v));
-  return ticks;
-}
-
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(0);
@@ -83,16 +74,15 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
     const [t0, t1] = first === last ? [first - 43_200_000, last + 43_200_000] : [first, last];
     // The second series shares the scale but never sets the time window: it is context inside the first.
     const second = (secondary?.points ?? []).filter((p) => p.t >= t0 && p.t <= t1);
-    const ticks = niceTicks(Math.max(...points.map((p) => p.value), ...second.map((p) => p.value)));
-    const yMax = ticks[ticks.length - 1]!;
+    const { lo, hi, ticks } = valueScale([...points.map((p) => p.value), ...second.map((p) => p.value)]);
     const x = (t: number) => MARGIN.left + ((t - t0) / (t1 - t0)) * innerW;
-    const y = (v: number) => MARGIN.top + innerH - (v / yMax) * innerH;
+    const y = (v: number) => MARGIN.top + innerH - ((v - lo) / (hi - lo)) * innerH;
     const path = (cs: { x: number; y: number }[]) => cs.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join("");
     const coords = points.map((p) => ({ x: x(p.t), y: y(p.value) }));
     const line = path(coords);
     const secondLine = second.length > 1 ? path(second.map((p) => ({ x: x(p.t), y: y(p.value) }))) : null;
     const secondDot = second.length === 1 ? { x: x(second[0]!.t), y: y(second[0]!.value) } : null;
-    const base = y(0);
+    const base = MARGIN.top + innerH;
     const area = `${line}L${coords[coords.length - 1]!.x.toFixed(1)},${base}L${coords[0]!.x.toFixed(1)},${base}Z`;
     const format = tickFormat(t1 - t0);
     const candidates = first === last ? [first] : [0, 1 / 3, 2 / 3, 1].map((f) => t0 + f * (t1 - t0));
@@ -140,12 +130,13 @@ export function LineChart<P extends ChartPoint>({ points, label, formatValue, fo
         >
           {geometry.ticks.map((tick) => (
             <g key={tick}>
-              <line className={tick === 0 ? "chart-axis" : "chart-grid"} x1={MARGIN.left} x2={width - MARGIN.right} y1={geometry.y(tick)} y2={geometry.y(tick)} />
+              <line className="chart-grid" x1={MARGIN.left} x2={width - MARGIN.right} y1={geometry.y(tick)} y2={geometry.y(tick)} />
               <text className="chart-tick" x={MARGIN.left - 8} y={geometry.y(tick)} textAnchor="end" dominantBaseline="middle">
                 {formatValue(tick)}
               </text>
             </g>
           ))}
+          <line className="chart-axis" x1={MARGIN.left} x2={width - MARGIN.right} y1={geometry.base} y2={geometry.base} />
           {geometry.timeTicks.map(({ t, text }) => {
             const x = geometry.x(t);
             const anchor = x <= MARGIN.left + 1 ? "start" : x >= width - MARGIN.right - 1 ? "end" : "middle";
