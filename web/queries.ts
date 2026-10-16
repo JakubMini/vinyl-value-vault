@@ -1,13 +1,24 @@
 /** Every request the dashboard makes, as TanStack Query hooks, so caching and refetching live in one place. */
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ApiRecord, CollectionResponse, ListedRecord, QueueResponse, RecordDetail, RecordsPage, SyncRun, SyncRunsResponse } from "../src/api-types";
+import type {
+  ApiRecord,
+  CollectionResponse,
+  LinkedDevice,
+  ListedRecord,
+  QueueResponse,
+  RecordDetail,
+  RecordsPage,
+  SyncRun,
+  SyncRunsResponse,
+} from "../src/api-types";
 import { ApiError, api } from "./api";
 
 export const keys = {
   collection: ["collection"] as const,
   syncRuns: ["sync-runs"] as const,
   records: ["records"] as const,
+  devices: ["devices"] as const,
 };
 
 /** The total and counts, with `days` of daily totals for the chart. Switching range keeps the old chart until the new one arrives. */
@@ -106,6 +117,29 @@ export function useUpdateRecord() {
       void client.invalidateQueries({ queryKey: keys.collection });
       void client.invalidateQueries({ queryKey: ["record", id] });
     },
+  });
+}
+
+/** Screens that hold a token. */
+export function useDevices() {
+  return useQuery({ queryKey: keys.devices, queryFn: () => api<{ devices: LinkedDevice[] }>("/devices").then((r) => r.devices) });
+}
+
+/**
+ * Approve the code a screen is showing. Nothing to refresh yet: the screen joins the list only
+ * once it collects its token on its next poll.
+ */
+export function useApproveDevice() {
+  return useMutation({
+    mutationFn: (userCode: string) => api<{ ok: true }>("/devices/approve", { method: "POST", json: { user_code: userCode } }),
+  });
+}
+
+export function useRevokeDevice() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api<null>(`/devices/${id}`, { method: "DELETE" }),
+    onSettled: () => void client.invalidateQueries({ queryKey: keys.devices }),
   });
 }
 

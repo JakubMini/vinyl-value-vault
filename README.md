@@ -73,6 +73,7 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 ```mermaid
 flowchart LR
   browser(["Browser<br/>(Cloudflare Access)"]) --> assets & api
+  screen(["Screen (ESP32)"]) --> gateway["gateway Worker<br/>(public)"] -->|service binding| api
   cron([Cron, every minute]) --> job
   subgraph worker["One Cloudflare Worker"]
     assets["Dashboard<br/>static assets"]
@@ -232,12 +233,13 @@ Money is stored in pence as integers. Times are ISO-8601 UTC. Grades use the Gol
 | `collection_daily` | Day | The day's last total. What the chart reads. |
 | `sync_runs` | Sync | What each sync added, refreshed and flagged, and why one stopped. |
 | `sync_ignored` | Deliberate delete | Items the sync must not bring back. |
+| `devices` | Screen, linked or being linked | Its code, when it was approved, and hashes of its device code and token. Revoking deletes the row. |
 
 The schema lives in [`migrations/`](migrations/), one numbered file per change.
 
 ## API
 
-Everything lives under `/api`. Every route except `/api/health` needs `Authorization: Bearer <API_KEY>` or an Access login. Amounts are in pence, with a formatted string alongside where it helps.
+Everything lives under `/api`. Every route except `/api/health` and the two `/api/device/*` steps needs `Authorization: Bearer <API_KEY>` or an Access login. Amounts are in pence, with a formatted string alongside where it helps.
 
 | Route | Does |
 | --- | --- |
@@ -254,6 +256,11 @@ Everything lives under `/api`. Every route except `/api/health` needs `Authoriza
 | `GET /api/snapshots?limit=` | The collection total over time. |
 | `POST /api/sync/discogs` | Sync now. `?dry_run=true` previews; `?force_removals=true` confirms a large removal. |
 | `GET /api/sync/runs?limit=` | Recent syncs. |
+| `POST /api/device/code` | A screen starts linking. Returns a `user_code` to show and a `device_code` to poll with. No key needed. |
+| `POST /api/device/token` | The screen polls with `{"device_code": ...}` and gets its `vvd_` token once approved, one time only. No key needed. |
+| `POST /api/devices/approve` | Approve `{"user_code": "XXXX-XXXX"}`. Case and dash don't matter. |
+| `GET /api/devices` | Linked screens. |
+| `DELETE /api/devices/:id` | Revoke a screen. Its token stops working at once. |
 
 <details>
 <summary>Example: add a record by its Discogs id</summary>
@@ -297,6 +304,7 @@ curl -s -X POST http://localhost:5173/api/records \
 
 - **Me, in a browser.** Cloudflare Access asks me to log in, then signs every request. The Worker verifies the token itself: signature, issuer, audience and expiry. A header alone proves nothing.
 - **Scripts and tests.** The API key, compared in constant time. In production a script also needs an Access service token, because every path, `/api/health` included, is behind the login.
+- **A screen on my shelf.** An ESP32 touchscreen can't log in to Access, so it reaches the vault through a small public gateway Worker, which calls this one over a service binding and passes on only five routes. The screen links with a device code, like signing in to a TV: it shows a code, I approve it on `/link`, and it gets its own `vvd_` token. That token can list records, read one and change its grades, nothing else. Only its hash is stored, and I can revoke it on `/link`. At most five codes wait for approval at once, each for ten minutes.
 
 <details>
 <summary>Setting up Access, and calling production from a script</summary>
@@ -408,6 +416,7 @@ vite.config.ts   one build for the dashboard and the Worker
 **Next**
 
 - [ ] Alexa skill: "what is my collection worth?"
+- [ ] A touchscreen on the shelf (ESP32) to browse records and grade them. The vault's side is built here: linking with a device code, and a token that can only read records and change grades. The gateway Worker and the firmware live outside this repo.
 - [ ] Sold prices from Discogs' sales history, entered by hand, if the suggestions prove off
 
 <details>

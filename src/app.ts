@@ -1,33 +1,53 @@
 /**
  * The HTTP API, served under /api so the rest of the hostname is free for the dashboard.
- * Everything except /api/health needs either `Authorization: Bearer <API_KEY>` (scripts, tests,
- * local development) or a Cloudflare Access login (the dashboard in a browser).
+ * Everything except /api/health and the two /api/device/* steps needs either `Authorization:
+ * Bearer <API_KEY>` (scripts, tests, local development), a Cloudflare Access login (the dashboard
+ * in a browser), or, for a few record routes, a linked screen's `vvd_` token.
  * Amounts are integers in minor units; a formatted string is included for convenience.
  */
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { timingSafeEqual } from "hono/utils/buffer";
+import { encodeBase64Url } from "hono/utils/encode";
 import { validator } from "hono/validator";
 import { z } from "zod";
 
 import { AccessUnavailable, verifyAccessJwt } from "./access";
-import type { ApiRecord, CollectionResponse, ListedRecord, QueueResponse, RecordDetail, RecordsPage, SyncRun } from "./api-types";
+import type {
+  ApiRecord,
+  CollectionResponse,
+  DeviceCode,
+  DeviceToken,
+  LinkedDevice,
+  ListedRecord,
+  QueueResponse,
+  RecordDetail,
+  RecordsPage,
+  SyncRun,
+} from "./api-types";
 import {
   type ListedRecordRow,
   type RecordInput,
   type RecordRow,
   type SyncRunRow,
+  approveDevice,
   collectionSummary,
+  createDeviceCode,
   dailyTotals,
+  deleteDevice,
   deleteRecord,
+  deviceByCode,
+  deviceByToken,
   getRecord,
   insertRecord,
   latestDiscogsValuation,
+  listDevices,
   listRecords,
   listSnapshots,
   listSyncRuns,
   listValuations,
   queueForValuation,
+  setDeviceToken,
   updateRecord,
 } from "./db";
 import { DiscogsError } from "./discogs";
@@ -106,6 +126,49 @@ const syncSchema = z.object({ dry_run: flag, force_removals: flag });
 
 const syncRunsSchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) });
 
+const deviceTokenSchema = z.object({ device_code: z.string().min(1) });
+
+// Typed with or without the dash, in any case: "bcdf-ghjk", "BCDFGHJK".
+const approveSchema = z.object({
+  user_code: z.string().transform((v) => {
+    const s = v.toUpperCase().replace(/[^A-Z]/g, "");
+    return `${s.slice(0, 4)}-${s.slice(4)}`;
+  }),
+});
+
+// Screens link through the public gateway Worker, but I approve them on the vault's own hostname.
+const VAULT_ORIGIN = "https://vault.jakubszypicyn.com";
+const DEVICE_CODE_TTL_S = 600;
+const DEVICE_POLL_INTERVAL_S = 5;
+// RFC 8628's suggestion: consonants only, so a code never spells a word.
+const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
+const DEVICE_TOKEN_PREFIX = "vvd_";
+
+// All a screen may do: read records and change their grades. PATCH bodies are narrowed below.
+const DEVICE_ROUTES: [string, RegExp][] = [
+  ["GET", /^\/api\/records$/],
+  ["GET", /^\/api\/records\/[^/]+$/],
+  ["PATCH", /^\/api\/records\/[^/]+$/],
+];
+const DEVICE_PATCHABLE = new Set(["media_condition", "sleeve_condition"]);
+
+function randomBase64Url(bytes: number): string {
+  // Hono's encoder keeps the "=" padding; a token travels better without it.
+  return encodeBase64Url(crypto.getRandomValues(new Uint8Array(bytes)).buffer).replace(/=+$/, "");
+}
+
+function userCode(): string {
+  // A 32-bit value modulo 20 is biased by about 1 in 270 million: nothing a person could notice.
+  const chars = Array.from(crypto.getRandomValues(new Uint32Array(8)), (n) => USER_CODE_ALPHABET[n % USER_CODE_ALPHABET.length]);
+  return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
+}
+
+/** SHA-256 as hex. Device codes and tokens are stored only like this. */
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Validate part of a request with a Zod schema. A failure is a 400 that lists the problems. */
 function validate<U extends "json" | "query", S extends z.ZodType>(target: U, schema: S) {
   return validator(target, (value, c) => {
@@ -157,9 +220,47 @@ function stripUndefined<T extends object>(value: T): { [K in keyof T]: Exclude<T
   };
 }
 
-export const app = new Hono<{ Bindings: Env }>().basePath("/api");
+/** `device` is the id of the linked screen making the request; unset for everyone else. */
+export const app = new Hono<{ Bindings: Env; Variables: { device?: number } }>().basePath("/api");
 
 app.get("/health", (c) => c.json({ ok: true, service: "vinyl-value-vault", now: new Date().toISOString() }));
+
+// Linking a screen, RFC 8628 style. These two need no credential: the screen has none yet.
+// The screen shows the user_code, I approve it on /link, and the screen polls with its
+// device_code until it gets a token.
+app.post("/device/code", async (c) => {
+  const device_code = randomBase64Url(32);
+  const user_code = userCode();
+  const now = Date.now();
+  const created = await createDeviceCode(c.env.DB, {
+    user_code,
+    device_code_hash: await sha256Hex(device_code),
+    created_at: new Date(now).toISOString(),
+    expires_at: new Date(now + DEVICE_CODE_TTL_S * 1000).toISOString(),
+  });
+  if (!created) return c.json({ error: "Too many codes waiting. Try again in a few minutes." }, 429);
+  return c.json({
+    device_code,
+    user_code,
+    verification_uri: `${VAULT_ORIGIN}/link`,
+    verification_uri_complete: `${VAULT_ORIGIN}/link?code=${user_code}`,
+    expires_in: DEVICE_CODE_TTL_S,
+    interval: DEVICE_POLL_INTERVAL_S,
+  } satisfies DeviceCode);
+});
+
+app.post("/device/token", validate("json", deviceTokenSchema), async (c) => {
+  const device = await deviceByCode(c.env.DB, await sha256Hex(c.req.valid("json").device_code));
+  if (!device) return c.json({ error: "expired_token" }, 400);
+  if (device.token_hash !== null) return c.json({ error: "invalid_grant" }, 400);
+  if (device.expires_at <= new Date().toISOString()) return c.json({ error: "expired_token" }, 400);
+  if (device.approved_at === null) return c.json({ error: "authorization_pending" }, 400);
+
+  const access_token = DEVICE_TOKEN_PREFIX + randomBase64Url(32);
+  // Two polls racing: only the first stores its token, the other is told the code is spent.
+  if (!(await setDeviceToken(c.env.DB, device.id, await sha256Hex(access_token)))) return c.json({ error: "invalid_grant" }, 400);
+  return c.json({ access_token, token_type: "Bearer" } satisfies DeviceToken);
+});
 
 function unauthorized(c: Context) {
   c.header("WWW-Authenticate", 'Bearer realm="vinyl-value-vault"');
@@ -171,6 +272,16 @@ function unauthorized(c: Context) {
 // Each path fails closed when its configuration is missing.
 app.use("*", async (c, next) => {
   const presented = /^Bearer\s+(\S+)$/i.exec(c.req.header("Authorization") ?? "")?.[1];
+  // A linked screen's token: looked up by its hash, and good for a few routes only.
+  if (presented?.startsWith(DEVICE_TOKEN_PREFIX)) {
+    const device = await deviceByToken(c.env.DB, await sha256Hex(presented));
+    if (!device) return unauthorized(c);
+    if (!DEVICE_ROUTES.some(([method, path]) => c.req.method === method && path.test(c.req.path))) {
+      return c.json({ error: "Not allowed for a linked screen" }, 403);
+    }
+    c.set("device", device.id);
+    return next();
+  }
   if (presented !== undefined) {
     // timingSafeEqual hashes both sides and compares in constant time.
     const expected = c.env.API_KEY;
@@ -296,6 +407,9 @@ app.patch("/records/:id", validate("json", patchRecordSchema), async (c) => {
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const patch = stripUndefined(c.req.valid("json"));
+  if (c.get("device") !== undefined && Object.keys(patch).some((key) => !DEVICE_PATCHABLE.has(key))) {
+    return c.json({ error: "A linked screen may change only media_condition and sleeve_condition" }, 400);
+  }
   const now = new Date().toISOString();
   const { media_condition } = patch;
   const record =
@@ -354,6 +468,20 @@ app.post("/sync/discogs", validate("query", syncSchema), async (c) => {
 app.get("/sync/runs", validate("query", syncRunsSchema), async (c) => {
   const { limit } = c.req.valid("query");
   return c.json({ runs: (await listSyncRuns(c.env.DB, limit)).map(presentSyncRun) });
+});
+
+// Approve a screen's code from the dashboard's /link page.
+app.post("/devices/approve", validate("json", approveSchema), async (c) => {
+  const approved = await approveDevice(c.env.DB, c.req.valid("json").user_code, new Date().toISOString());
+  return approved ? c.json({ ok: true }) : c.json({ error: "No code like that is waiting. It may have expired." }, 404);
+});
+
+app.get("/devices", async (c) => c.json({ devices: (await listDevices(c.env.DB)) satisfies LinkedDevice[] }));
+
+app.delete("/devices/:id", async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  return (await deleteDevice(c.env.DB, id)) ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
