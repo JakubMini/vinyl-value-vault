@@ -637,3 +637,75 @@ export async function lastSyncTimes(db: D1Database): Promise<{ last_ok: string |
     .first<{ last_ok: string | null; last_attempt: string | null }>();
   return row ?? { last_ok: null, last_attempt: null };
 }
+
+/** A screen linked, or being linked, with a device code. */
+export interface DeviceRow {
+  id: number;
+  user_code: string;
+  device_code_hash: string;
+  token_hash: string | null;
+  created_at: string;
+  expires_at: string;
+  approved_at: string | null;
+}
+
+/** How many codes may wait for a token at once, so an open endpoint cannot fill the table. */
+export const MAX_PENDING_DEVICES = 5;
+
+/**
+ * Start linking a screen. Codes that expired without a token are cleared first. Returns false,
+ * writing nothing, when MAX_PENDING_DEVICES codes are already waiting. One transaction, so two
+ * screens asking at once cannot both squeeze past the cap.
+ */
+export async function createDeviceCode(
+  db: D1Database,
+  device: Pick<DeviceRow, "user_code" | "device_code_hash" | "created_at" | "expires_at">,
+): Promise<boolean> {
+  const [, inserted] = await db.batch([
+    db.prepare("DELETE FROM devices WHERE token_hash IS NULL AND expires_at <= ?").bind(device.created_at),
+    db
+      .prepare(
+        `INSERT INTO devices (user_code, device_code_hash, created_at, expires_at)
+         SELECT ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM devices WHERE token_hash IS NULL) < ?`,
+      )
+      .bind(device.user_code, device.device_code_hash, device.created_at, device.expires_at, MAX_PENDING_DEVICES),
+  ]);
+  return (inserted?.meta.changes ?? 0) > 0;
+}
+
+export async function deviceByCode(db: D1Database, deviceCodeHash: string): Promise<DeviceRow | null> {
+  return db.prepare("SELECT * FROM devices WHERE device_code_hash = ?").bind(deviceCodeHash).first<DeviceRow>();
+}
+
+/** Approve a waiting code. False when no unexpired, unapproved code matches. */
+export async function approveDevice(db: D1Database, userCode: string, now: string): Promise<boolean> {
+  const result = await db
+    .prepare("UPDATE devices SET approved_at = ?1 WHERE user_code = ?2 AND approved_at IS NULL AND expires_at > ?1")
+    .bind(now, userCode)
+    .run();
+  return result.meta.changes > 0;
+}
+
+/** Store an approved device's token. False if it already has one: a token is minted once. */
+export async function setDeviceToken(db: D1Database, id: number, tokenHash: string): Promise<boolean> {
+  const result = await db.prepare("UPDATE devices SET token_hash = ? WHERE id = ? AND token_hash IS NULL").bind(tokenHash, id).run();
+  return result.meta.changes > 0;
+}
+
+export async function deviceByToken(db: D1Database, tokenHash: string): Promise<DeviceRow | null> {
+  return db.prepare("SELECT * FROM devices WHERE token_hash = ?").bind(tokenHash).first<DeviceRow>();
+}
+
+/** Linked screens: the devices holding a token. */
+export async function listDevices(db: D1Database): Promise<Pick<DeviceRow, "id" | "created_at" | "approved_at">[]> {
+  const { results } = await db
+    .prepare("SELECT id, created_at, approved_at FROM devices WHERE token_hash IS NOT NULL ORDER BY id")
+    .all<Pick<DeviceRow, "id" | "created_at" | "approved_at">>();
+  return results;
+}
+
+/** Revoke a device. Its token stops working at once. */
+export async function deleteDevice(db: D1Database, id: number): Promise<boolean> {
+  const result = await db.prepare("DELETE FROM devices WHERE id = ?").bind(id).run();
+  return result.meta.changes > 0;
+}

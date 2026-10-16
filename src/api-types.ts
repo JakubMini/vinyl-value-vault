@@ -169,6 +169,32 @@ export interface SyncRunsResponse {
   runs: SyncRun[];
 }
 
+/** POST /api/device/code: a screen starts linking. It shows user_code and polls with device_code. */
+export interface DeviceCode {
+  device_code: string;
+  /** XXXX-XXXX, typed in on the dashboard's /link page. */
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  /** Seconds until the codes stop working. */
+  expires_in: number;
+  /** Seconds to wait between polls. */
+  interval: number;
+}
+
+/** POST /api/device/token, once the code is approved. Issued once. */
+export interface DeviceToken {
+  access_token: string;
+  token_type: "Bearer";
+}
+
+/** A screen holding a token, as GET /api/devices lists it. */
+export interface LinkedDevice {
+  id: number;
+  created_at: string;
+  approved_at: string | null;
+}
+
 export interface ApiErrorBody {
   error: string;
   issues?: unknown;

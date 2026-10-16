@@ -2,6 +2,7 @@ import { Link, NavLink, Route, Routes } from "react-router";
 
 import { Collection } from "./pages/Collection";
 import { Insights } from "./pages/Insights";
+import { LinkScreen } from "./pages/Link";
 import { Overview } from "./pages/Overview";
 import { Record } from "./pages/Record";
 import { Sync } from "./pages/Sync";
@@ -40,6 +41,7 @@ export function App() {
           <Route path="/records/:id" element={<Record />} />
           <Route path="/insights" element={<Insights />} />
           <Route path="/sync" element={<Sync />} />
+          <Route path="/link" element={<LinkScreen />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

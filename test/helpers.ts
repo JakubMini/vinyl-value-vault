@@ -36,6 +36,7 @@ export async function resetDatabase(): Promise<void> {
     env.DB.prepare("DELETE FROM records"),
     env.DB.prepare("DELETE FROM sync_runs"),
     env.DB.prepare("DELETE FROM sync_ignored"),
+    env.DB.prepare("DELETE FROM devices"),
   ]);
 }
 
