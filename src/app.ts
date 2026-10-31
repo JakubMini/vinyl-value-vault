@@ -2,7 +2,7 @@
  * The HTTP API, served under /api so the rest of the hostname is free for the dashboard.
  * Everything except /api/health and the two /api/device/* steps needs either `Authorization:
  * Bearer <API_KEY>` (scripts, tests, local development), a Cloudflare Access login (the dashboard
- * in a browser), or, for a few record routes, a linked screen's `vvd_` token.
+ * in a browser), or, for a few record and tag routes, a linked screen's `vvd_` token.
  * Amounts are integers in minor units; a formatted string is included for convenience.
  */
 import { type Context, Hono } from "hono";
@@ -20,6 +20,7 @@ import type {
   DeviceToken,
   LinkedDevice,
   ListedRecord,
+  NfcTag,
   QueueResponse,
   RecordDetail,
   RecordsPage,
@@ -48,6 +49,8 @@ import {
   listValuations,
   queueForValuation,
   setDeviceToken,
+  setTag,
+  tagRecord,
   updateRecord,
 } from "./db";
 import { DiscogsError } from "./discogs";
@@ -128,6 +131,13 @@ const syncRunsSchema = z.object({ limit: z.coerce.number().int().min(1).max(100)
 
 const deviceTokenSchema = z.object({ device_code: z.string().min(1) });
 
+const tagSchema = z.object({ record_id: z.number().int().positive() });
+
+/** An NFC tag's UID as hex, 4 to 10 bytes, in upper case; null if it isn't one. */
+function parseUid(raw: string): string | null {
+  return /^(?:[0-9A-Fa-f]{2}){4,10}$/.test(raw) ? raw.toUpperCase() : null;
+}
+
 // Typed with or without the dash, in any case: "bcdf-ghjk", "BCDFGHJK".
 const approveSchema = z.object({
   user_code: z.string().transform((v) => {
@@ -144,11 +154,14 @@ const DEVICE_POLL_INTERVAL_S = 5;
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const DEVICE_TOKEN_PREFIX = "vvd_";
 
-// All a screen may do: read records and change their grades. PATCH bodies are narrowed below.
+// All a screen may do: read records, change their grades, and read and assign NFC tags. PATCH
+// bodies are narrowed below.
 const DEVICE_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/records$/],
   ["GET", /^\/api\/records\/[^/]+$/],
   ["PATCH", /^\/api\/records\/[^/]+$/],
+  ["GET", /^\/api\/tags\/[^/]+$/],
+  ["PUT", /^\/api\/tags\/[^/]+$/],
 ];
 const DEVICE_PATCHABLE = new Set(["media_condition", "sleeve_condition"]);
 
@@ -482,6 +495,23 @@ app.delete("/devices/:id", async (c) => {
   const id = parseId(c.req.param("id"));
   if (id === null) return c.json({ error: "Invalid id" }, 400);
   return (await deleteDevice(c.env.DB, id)) ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
+});
+
+// NFC tags in record sleeves. A screen looks up a tag it hasn't seen, and assigns new ones.
+app.get("/tags/:uid", async (c) => {
+  const uid = parseUid(c.req.param("uid"));
+  if (uid === null) return c.json({ error: "Invalid tag" }, 400);
+  const record_id = await tagRecord(c.env.DB, uid);
+  return record_id === null ? c.json({ error: "Not found" }, 404) : c.json({ uid, record_id } satisfies NfcTag);
+});
+
+app.put("/tags/:uid", validate("json", tagSchema), async (c) => {
+  const uid = parseUid(c.req.param("uid"));
+  if (uid === null) return c.json({ error: "Invalid tag" }, 400);
+  const { record_id } = c.req.valid("json");
+  if (!(await getRecord(c.env.DB, record_id))) return c.json({ error: "No such record" }, 404);
+  await setTag(c.env.DB, uid, record_id, new Date().toISOString());
+  return c.json({ uid, record_id } satisfies NfcTag);
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));

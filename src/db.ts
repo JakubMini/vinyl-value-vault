@@ -709,3 +709,20 @@ export async function deleteDevice(db: D1Database, id: number): Promise<boolean>
   const result = await db.prepare("DELETE FROM devices WHERE id = ?").bind(id).run();
   return result.meta.changes > 0;
 }
+
+/** The record an NFC tag opens, or null for a tag no screen has assigned. */
+export async function tagRecord(db: D1Database, uid: string): Promise<number | null> {
+  const row = await db.prepare("SELECT record_id FROM nfc_tags WHERE uid = ?").bind(uid).first<{ record_id: number }>();
+  return row?.record_id ?? null;
+}
+
+/** Point a tag at a record, replacing whatever it pointed at before. */
+export async function setTag(db: D1Database, uid: string, recordId: number, now: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO nfc_tags (uid, record_id, created_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT (uid) DO UPDATE SET record_id = ?2, created_at = ?3`,
+    )
+    .bind(uid, recordId, now)
+    .run();
+}
