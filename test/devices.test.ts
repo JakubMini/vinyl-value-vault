@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DeviceCode, DeviceToken, LinkedDevice, RecordsPage } from "../src/api-types";
+import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, RecordsPage } from "../src/api-types";
 import { api, expectAllMocksUsed, rawFetch, resetDatabase, seedRecord } from "./helpers";
 
 beforeEach(resetDatabase);
@@ -96,7 +96,7 @@ describe("linking a screen", () => {
 });
 
 describe("a linked screen", () => {
-  it("may only read records and change their grades", async () => {
+  it("may only read records, change their grades and use tags", async () => {
     const token = await linkedScreen();
     const { id } = await seedRecord({ artist: "Blur", title: "Parklife" });
 
@@ -143,5 +143,56 @@ describe("a linked screen", () => {
 
   it("is refused with a made-up token", async () => {
     expect((await screen("/records", { token: "vvd_made-up" })).status).toBe(401);
+  });
+});
+
+describe("NFC tags", () => {
+  const assign = (uid: string, record_id: number, token: string) => screen(`/tags/${uid}`, { method: "PUT", token, json: { record_id } });
+
+  it("points a tag at a record, and finds it from another screen", async () => {
+    const token = await linkedScreen();
+    const { id } = await seedRecord({ artist: "Bonobo", title: "Migration" });
+
+    expect((await screen("/tags/04C67BA5892681", { token })).status).toBe(404);
+    const res = await assign("04c67ba5892681", id, token);
+    expect(res.status).toBe(200);
+    expect(await res.json<NfcTag>()).toEqual({ uid: "04C67BA5892681", record_id: id });
+
+    const other = await linkedScreen();
+    const found = await screen("/tags/04C67BA5892681", { token: other });
+    expect(found.status).toBe(200);
+    expect(await found.json<NfcTag>()).toEqual({ uid: "04C67BA5892681", record_id: id });
+  });
+
+  it("lets a record have several tags, and moves a tag when it is assigned again", async () => {
+    const token = await linkedScreen();
+    const first = await seedRecord({ artist: "Massive Attack", title: "Mezzanine" });
+    const second = await seedRecord({ artist: "Portishead", title: "Dummy" });
+
+    await assign("04AABBCCDDEEFF", first.id, token);
+    await assign("04112233445566", first.id, token);
+    for (const uid of ["04AABBCCDDEEFF", "04112233445566"]) {
+      expect((await (await screen(`/tags/${uid}`, { token })).json<NfcTag>()).record_id).toBe(first.id);
+    }
+    await assign("04112233445566", second.id, token);
+    expect((await (await screen("/tags/04112233445566", { token })).json<NfcTag>()).record_id).toBe(second.id);
+  });
+
+  it("refuses a malformed tag or a record that doesn't exist, and forgets tags of a deleted record", async () => {
+    const token = await linkedScreen();
+    const { id } = await seedRecord({ artist: "Air", title: "Moon Safari" });
+
+    expect((await screen("/tags/not-a-tag", { token })).status).toBe(400);
+    expect((await assign("04C67B", id, token)).status).toBe(400);
+    expect((await assign("04C67BA5892681", id + 1000, token)).status).toBe(404);
+    expect((await screen(`/tags/04C67BA5892681`, { method: "PUT", token, json: { record_id: "1" } })).status).toBe(400);
+
+    await assign("04C67BA5892681", id, token);
+    expect((await api(`/records/${id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await screen("/tags/04C67BA5892681", { token })).status).toBe(404);
+  });
+
+  it("needs a token", async () => {
+    expect((await screen("/tags/04C67BA5892681")).status).toBe(401);
   });
 });

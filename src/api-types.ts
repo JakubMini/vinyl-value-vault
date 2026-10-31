@@ -195,6 +195,12 @@ export interface LinkedDevice {
   approved_at: string | null;
 }
 
+/** GET or PUT /api/tags/:uid: the record an NFC tag opens. */
+export interface NfcTag {
+  uid: string;
+  record_id: number;
+}
+
 export interface ApiErrorBody {
   error: string;
   issues?: unknown;

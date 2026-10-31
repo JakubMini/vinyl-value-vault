@@ -30,6 +30,7 @@ export async function api(path: string, init: RequestInit & { json?: unknown } =
 
 export async function resetDatabase(): Promise<void> {
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM nfc_tags"),
     env.DB.prepare("DELETE FROM valuations"),
     env.DB.prepare("DELETE FROM collection_snapshots"),
     env.DB.prepare("DELETE FROM collection_daily"),
