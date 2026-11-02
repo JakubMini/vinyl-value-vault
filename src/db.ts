@@ -726,3 +726,28 @@ export async function setTag(db: D1Database, uid: string, recordId: number, now:
     .bind(uid, recordId, now)
     .run();
 }
+
+export interface PlayInput {
+  record_id: number;
+  played_at: string;
+  tag_uid: string | null;
+}
+
+/**
+ * Log plays, skipping any for a record that doesn't exist and any already logged (same record, same
+ * moment), so a screen can resend a batch safely. Returns how many were new.
+ */
+export async function insertPlays(db: D1Database, plays: PlayInput[], deviceId: number | null): Promise<number> {
+  if (plays.length === 0) return 0;
+  const results = await db.batch(
+    plays.map((p) =>
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO plays (record_id, played_at, tag_uid, device_id)
+           SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM records WHERE id = ?1)`,
+        )
+        .bind(p.record_id, p.played_at, p.tag_uid, deviceId),
+    ),
+  );
+  return results.reduce((n, r) => n + r.meta.changes, 0);
+}

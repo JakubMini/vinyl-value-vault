@@ -201,6 +201,11 @@ export interface NfcTag {
   record_id: number;
 }
 
+/** POST /api/plays: how many of the plays sent were new. */
+export interface PlaysRecorded {
+  recorded: number;
+}
+
 export interface ApiErrorBody {
   error: string;
   issues?: unknown;

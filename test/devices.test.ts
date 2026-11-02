@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, RecordsPage } from "../src/api-types";
+import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, PlaysRecorded, RecordsPage } from "../src/api-types";
 import { api, expectAllMocksUsed, rawFetch, resetDatabase, seedRecord } from "./helpers";
 
 beforeEach(resetDatabase);
@@ -194,5 +194,47 @@ describe("NFC tags", () => {
 
   it("needs a token", async () => {
     expect((await screen("/tags/04C67BA5892681")).status).toBe(401);
+  });
+});
+
+describe("plays", () => {
+  const log = (plays: unknown[], token: string) => screen("/plays", { method: "POST", token, json: { plays } });
+  const rows = async () =>
+    (await env.DB.prepare("SELECT record_id, played_at, tag_uid, device_id FROM plays ORDER BY played_at").all()).results;
+
+  it("logs each play with its time, tag and screen, once even if sent twice", async () => {
+    const token = await linkedScreen();
+    const { id } = await seedRecord({ artist: "Bonobo", title: "Migration" });
+    const plays = [
+      { record_id: id, played_at: "2026-11-02T10:15:22Z", tag_uid: "04c67ba5892681" },
+      { record_id: id, played_at: "2026-11-02T19:40:00Z", tag_uid: "04C67BA5892681" },
+    ];
+
+    const res = await log(plays, token);
+    expect(res.status).toBe(200);
+    expect(await res.json<PlaysRecorded>()).toEqual({ recorded: 2 });
+    expect(await (await log(plays, token)).json<PlaysRecorded>()).toEqual({ recorded: 0 });
+
+    const logged = await rows();
+    expect(logged).toHaveLength(2);
+    expect(logged[0]).toMatchObject({ record_id: id, played_at: "2026-11-02T10:15:22.000Z", tag_uid: "04C67BA5892681" });
+    expect(logged[0]!.device_id).toEqual(expect.any(Number));
+  });
+
+  it("skips plays of a record that doesn't exist, and stamps one sent without a time", async () => {
+    const token = await linkedScreen();
+    const { id } = await seedRecord({ artist: "Air", title: "Moon Safari" });
+
+    const res = await log([{ record_id: id }, { record_id: id + 1000, played_at: "2026-11-02T10:00:00Z" }], token);
+    expect(await res.json<PlaysRecorded>()).toEqual({ recorded: 1 });
+    const [play] = await rows();
+    expect(Date.now() - Date.parse(play!.played_at as string)).toBeLessThan(60_000);
+  });
+
+  it("refuses a malformed batch, and needs a token", async () => {
+    const token = await linkedScreen();
+    expect((await log([], token)).status).toBe(400);
+    expect((await log([{ record_id: 1, played_at: "yesterday" }], token)).status).toBe(400);
+    expect((await screen("/plays", { method: "POST", json: { plays: [{ record_id: 1 }] } })).status).toBe(401);
   });
 });

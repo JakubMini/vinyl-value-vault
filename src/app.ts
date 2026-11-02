@@ -2,7 +2,7 @@
  * The HTTP API, served under /api so the rest of the hostname is free for the dashboard.
  * Everything except /api/health and the two /api/device/* steps needs either `Authorization:
  * Bearer <API_KEY>` (scripts, tests, local development), a Cloudflare Access login (the dashboard
- * in a browser), or, for a few record and tag routes, a linked screen's `vvd_` token.
+ * in a browser), or, for a few record, tag and play routes, a linked screen's `vvd_` token.
  * Amounts are integers in minor units; a formatted string is included for convenience.
  */
 import { type Context, Hono } from "hono";
@@ -21,6 +21,7 @@ import type {
   LinkedDevice,
   ListedRecord,
   NfcTag,
+  PlaysRecorded,
   QueueResponse,
   RecordDetail,
   RecordsPage,
@@ -40,6 +41,7 @@ import {
   deviceByCode,
   deviceByToken,
   getRecord,
+  insertPlays,
   insertRecord,
   latestDiscogsValuation,
   listDevices,
@@ -133,6 +135,24 @@ const deviceTokenSchema = z.object({ device_code: z.string().min(1) });
 
 const tagSchema = z.object({ record_id: z.number().int().positive() });
 
+// A screen sends what it has logged since it last could, oldest first. No played_at: now.
+const playsSchema = z.object({
+  plays: z
+    .array(
+      z.object({
+        record_id: z.number().int().positive(),
+        played_at: z.string().datetime().optional(),
+        tag_uid: z
+          .string()
+          .regex(/^(?:[0-9A-Fa-f]{2}){4,10}$/)
+          .transform((v) => v.toUpperCase())
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(100),
+});
+
 /** An NFC tag's UID as hex, 4 to 10 bytes, in upper case; null if it isn't one. */
 function parseUid(raw: string): string | null {
   return /^(?:[0-9A-Fa-f]{2}){4,10}$/.test(raw) ? raw.toUpperCase() : null;
@@ -154,14 +174,15 @@ const DEVICE_POLL_INTERVAL_S = 5;
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const DEVICE_TOKEN_PREFIX = "vvd_";
 
-// All a screen may do: read records, change their grades, and read and assign NFC tags. PATCH
-// bodies are narrowed below.
+// All a screen may do: read records, change their grades, read and assign NFC tags, and log plays.
+// PATCH bodies are narrowed below.
 const DEVICE_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/records$/],
   ["GET", /^\/api\/records\/[^/]+$/],
   ["PATCH", /^\/api\/records\/[^/]+$/],
   ["GET", /^\/api\/tags\/[^/]+$/],
   ["PUT", /^\/api\/tags\/[^/]+$/],
+  ["POST", /^\/api\/plays$/],
 ];
 const DEVICE_PATCHABLE = new Set(["media_condition", "sleeve_condition"]);
 
@@ -512,6 +533,18 @@ app.put("/tags/:uid", validate("json", tagSchema), async (c) => {
   if (!(await getRecord(c.env.DB, record_id))) return c.json({ error: "No such record" }, 404);
   await setTag(c.env.DB, uid, record_id, new Date().toISOString());
   return c.json({ uid, record_id } satisfies NfcTag);
+});
+
+// A record went on the stand. Raw rows, for a yearly "wrapped" later.
+app.post("/plays", validate("json", playsSchema), async (c) => {
+  const now = new Date().toISOString();
+  const plays = c.req.valid("json").plays.map((p) => ({
+    record_id: p.record_id,
+    played_at: p.played_at ? new Date(p.played_at).toISOString() : now,
+    tag_uid: p.tag_uid ?? null,
+  }));
+  const recorded = await insertPlays(c.env.DB, plays, c.get("device") ?? null);
+  return c.json({ recorded } satisfies PlaysRecorded);
 });
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
