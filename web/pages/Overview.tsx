@@ -4,12 +4,16 @@ import { Link, useSearchParams } from "react-router";
 import type { ListedRecord } from "../../src/api-types";
 import { DEFAULT_SELECTION, matches, QUICK_FILTERS, type Selection, writeSelection } from "../../src/select";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
+import { CoverGrid } from "../CoverGrid";
 import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
 import { useCollection, useRecords } from "../queries";
 import { over, RANGES, type Range, readRange, withRange } from "../range";
 import "../overview.css";
+
+/** How many covers the "Recently played" shelf shows: one row on a laptop. */
+const RECENT_PLAYS = 6;
 
 const preset = (id: string): Partial<Selection> => QUICK_FILTERS.find((f) => f.id === id)?.preset ?? {};
 
@@ -41,6 +45,10 @@ export function Overview() {
   const needsPrice = preset("waiting");
   const waiting = all.filter((r) => matches(r, { ...DEFAULT_SELECTION, ...needsPrice })).length;
   const period = range.label.toLowerCase();
+  const recentlyPlayed = inCollection
+    .filter((r) => r.last_played_at !== null)
+    .sort((a, b) => b.last_played_at!.localeCompare(a.last_played_at!))
+    .slice(0, RECENT_PLAYS);
 
   return (
     <section className="stack">
@@ -119,6 +127,20 @@ export function Overview() {
           </div>
         )}
       </div>
+
+      {recentlyPlayed.length > 0 ? (
+        <div className="card">
+          <div className="row-between">
+            <h2 className="card-title">Recently played</h2>
+            <Link to={collectionLink({ sort: "plays", dir: "desc" })} className="ov-more">
+              Most played
+            </Link>
+          </div>
+          <div className="ov-shelf">
+            <CoverGrid rows={recentlyPlayed} corner={() => null} />
+          </div>
+        </div>
+      ) : null}
 
       {records.isError ? <ErrorState error={records.error} /> : null}
       {records.data ? (

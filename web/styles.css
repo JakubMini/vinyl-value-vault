@@ -1,20 +1,22 @@
 /*
- * One quiet look for the whole dashboard. Colours are tokens, defined once for light and once
- * for dark; components use the tokens, never raw values. The data is the only loud thing.
+ * One quiet look for the whole dashboard: sleeve paper by day, black vinyl by night, an orange
+ * label for the one accent. No cards: sections are set apart by space and a hairline. Colours
+ * are tokens, defined once for light and once for dark; components use the tokens, never raw
+ * values. The covers and the data are the only loud things.
  */
 :root {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --surface-raised: #ffffff;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --ink-muted: #6b6a65;
-  --hairline: #e1e0d9;
-  --border: rgba(11, 11, 11, 0.1);
-  --hover: rgba(11, 11, 11, 0.04);
-  --accent: #2a78d6;
-  --accent-ink: #1c5cab;
+  --page: #f5f2ec;
+  --surface: #f5f2ec;
+  --surface-raised: #fffdf9;
+  --ink: #141210;
+  --ink-2: #4f4a43;
+  --ink-muted: #6e675e;
+  --hairline: #e2ddd3;
+  --border: rgba(20, 18, 16, 0.12);
+  --hover: rgba(20, 18, 16, 0.05);
+  --accent: #c2410c;
+  --accent-ink: #9a3412;
   --on-accent: #ffffff;
   --good: #006300;
   --warning: #8a5a00;
@@ -24,38 +26,48 @@
   --critical-wash: rgba(208, 59, 59, 0.1);
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* The record itself: black in both themes, the label in the accent. */
+  --vinyl: #121110;
+  --groove: rgba(255, 255, 255, 0.07);
+  --sheen: rgba(255, 255, 255, 0.14);
+  --label: #c2410c;
   /* Charts: the first categorical slot, and recessive chrome. */
-  --series-1: #2a78d6;
-  --chart-grid: #e1e0d9;
-  --chart-axis: #c3c2b7;
-  --chart-tick: #6b6a65;
+  --series-1: #c2410c;
+  --chart-grid: #e2ddd3;
+  --chart-axis: #c9c2b5;
+  --chart-tick: #6e675e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --surface-raised: #222220;
+    --page: #0f0e0d;
+    --surface: #0f0e0d;
+    --surface-raised: #1c1a18;
     --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --ink-muted: #9a9890;
-    --hairline: #2c2c2a;
+    --ink-2: #c9c2b5;
+    --ink-muted: #9b948a;
+    --hairline: #2a2725;
     --border: rgba(255, 255, 255, 0.1);
     --hover: rgba(255, 255, 255, 0.05);
-    --accent: #3987e5;
-    --accent-ink: #86b6ef;
-    --on-accent: #ffffff;
+    --accent: #f97316;
+    --accent-ink: #fdba74;
+    --on-accent: #1a0d05;
     --good: #0ca30c;
     --warning: #fab219;
     --critical: #e66767;
     --good-wash: rgba(12, 163, 12, 0.16);
     --warning-wash: rgba(250, 178, 25, 0.14);
     --critical-wash: rgba(230, 103, 103, 0.14);
-    --series-1: #3987e5;
-    --chart-grid: #2c2c2a;
-    --chart-axis: #383835;
-    --chart-tick: #9a9890;
+    --series-1: #f97316;
+    --chart-grid: #2a2725;
+    --chart-axis: #3a3633;
+    --chart-tick: #9b948a;
+    --vinyl: #1d1b19;
+    --groove: rgba(255, 255, 255, 0.07);
+    --sheen: rgba(255, 255, 255, 0.16);
+    --label: #f97316;
   }
 }
 
@@ -82,11 +94,15 @@ h2 {
 }
 
 h1 {
-  font-size: 24px;
+  font-size: 26px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
 }
 
 h2 {
   font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 p {
@@ -104,7 +120,9 @@ p {
 /* Layout */
 
 .topbar {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--page) 86%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--hairline);
   position: sticky;
   top: 0;
@@ -185,7 +203,7 @@ nav {
 }
 
 .stack > * + * {
-  margin-top: 24px;
+  margin-top: 32px;
 }
 
 .row-between {
@@ -214,15 +232,18 @@ nav {
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+  gap: 16px 24px;
 }
 
-.tile,
+/* Cardless: a tile is a figure on the page; a "card" is a section under a hairline. */
+.tile {
+  padding: 4px 0 0;
+  border-top: 2px solid var(--ink);
+}
+
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
 }
 
 .tile-link {
@@ -232,7 +253,7 @@ nav {
 }
 
 .tile-link:hover {
-  border-color: var(--ink-muted);
+  border-color: var(--accent);
 }
 
 .tile-label {
@@ -257,7 +278,7 @@ nav {
 }
 
 .card > * + * {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .figures {
@@ -299,12 +320,14 @@ nav {
   font: inherit;
   font-weight: 550;
   color: var(--ink);
-  background: var(--surface-raised);
+  background: transparent;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 14px;
+  border-radius: 999px;
+  padding: 8px 16px;
+  min-height: 40px;
   text-decoration: none;
   cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .button:hover:not(:disabled) {
@@ -379,9 +402,6 @@ nav {
 
 .table-wrap {
   overflow-x: auto;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 .table {
@@ -447,7 +467,7 @@ nav {
 .input {
   font: inherit;
   color: var(--ink);
-  background: var(--surface-raised);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 10px;
@@ -511,7 +531,7 @@ th[aria-sort="descending"] {
   display: block;
   width: 40px;
   height: 40px;
-  border-radius: 4px;
+  border-radius: 2px;
   object-fit: cover;
   background: var(--hover);
 }
@@ -715,12 +735,13 @@ th[aria-sort="descending"] {
 /* The header, the price card and the rows below are laid out in web/record.css. */
 
 .cover {
+  display: block;
   width: 180px;
   aspect-ratio: 1;
-  border-radius: 8px;
+  border-radius: 3px;
   object-fit: cover;
   background: var(--hover);
-  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 8px 24px -12px rgba(0, 0, 0, 0.35);
 }
 
 .split {
@@ -1127,11 +1148,11 @@ a.bar-row:hover .bar-fill {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px 12px;
+  gap: 28px 24px;
 }
 .cover-link {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   color: inherit;
   text-decoration: none;
 }
@@ -1139,10 +1160,11 @@ a.bar-row:hover .bar-fill {
   position: relative;
   display: block;
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 3px;
   overflow: hidden;
   background: var(--hover);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 250ms ease, transform 250ms ease;
 }
 .cover-art img,
 .cover-empty-art {
@@ -1151,8 +1173,9 @@ a.bar-row:hover .bar-fill {
   height: 100%;
   object-fit: cover;
 }
-.cover-link:hover .cover-art {
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+.cover-link:hover .cover-art,
+.cover-link:focus-visible .cover-art {
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.4);
 }
 .cover-value {
   position: absolute;
@@ -1179,6 +1202,9 @@ a.bar-row:hover .bar-fill {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.cover-plays {
+  color: var(--accent-ink);
+}
 .cover-artist {
   font-size: 13px;
   color: var(--ink-muted);
@@ -1192,6 +1218,66 @@ a.bar-row:hover .bar-fill {
 @media (max-width: 640px) {
   .covers {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 12px 10px;
+    gap: 20px 16px;
+  }
+}
+
+/* --- Vinyl ------------------------------------------------------------------------------- */
+
+/* A sleeve holds a cover and, behind it, its record. */
+.sleeve {
+  position: relative;
+  display: block;
+  isolation: isolate;
+  margin-bottom: 8px;
+}
+.sleeve > .cover-art,
+.sleeve > .cover {
+  position: relative;
+  z-index: 1;
+}
+
+/* The record: grooves, a label in the accent, a spindle hole. Drawn in CSS, no image. */
+.disc {
+  position: absolute;
+  z-index: 0;
+  top: 3%;
+  left: 3%;
+  width: 94%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--page) 0 2.2%, transparent 2.4%),
+    radial-gradient(circle, var(--label) 0 30%, transparent 30.5%),
+    conic-gradient(from 20deg, transparent 0 8%, var(--sheen) 14%, transparent 20% 58%, var(--sheen) 64%, transparent 70%),
+    repeating-radial-gradient(circle, var(--vinyl) 0 1.6px, var(--groove) 1.6px 2.2px, var(--vinyl) 2.2px 3.4px),
+    var(--vinyl);
+  box-shadow: 0 0 0 1px var(--border), 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* On the wall, the record slides out of its sleeve when the cover is pointed at. */
+.cover-link:hover .disc,
+.cover-link:focus-visible .disc {
+  transform: translateX(22%) rotate(40deg);
+}
+
+/* On a record's page it sits half out, for good. */
+.rec-sleeve .disc {
+  transform: translateX(34%);
+}
+
+code.uid {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disc,
+  .cover-art,
+  .button {
+    transition: none;
   }
 }

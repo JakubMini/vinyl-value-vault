@@ -49,6 +49,7 @@ import {
   listSnapshots,
   listSyncRuns,
   listValuations,
+  playStats,
   queueForValuation,
   setDeviceToken,
   setTag,
@@ -236,7 +237,15 @@ function presentRecord(row: RecordRow): ApiRecord {
 }
 
 function presentListedRecord(row: ListedRecordRow): ListedRecord {
-  return { ...presentRecord(row), change_30d_minor: row.change_30d_minor, change_minor: row.change_minor, gain_minor: row.gain_minor };
+  return {
+    ...presentRecord(row),
+    change_30d_minor: row.change_30d_minor,
+    change_minor: row.change_minor,
+    gain_minor: row.gain_minor,
+    play_count: row.play_count,
+    last_played_at: row.last_played_at,
+    tag_uids: readList(row.tag_uids),
+  };
 }
 
 function presentSyncRun(run: SyncRunRow): SyncRun {
@@ -419,12 +428,15 @@ app.get("/records/:id", validate("query", historySchema), async (c) => {
   if (id === null) return c.json({ error: "Invalid id" }, 400);
   const record = await getRecord(c.env.DB, id);
   if (!record) return c.json({ error: "Not found" }, 404);
-  const [valuations, latest] = await Promise.all([
+  const [valuations, latest, plays] = await Promise.all([
     listValuations(c.env.DB, id, c.req.valid("query").limit),
     latestDiscogsValuation(c.env.DB, id),
+    playStats(c.env.DB, id),
   ]);
   return c.json({
     ...presentRecord(record),
+    ...plays,
+    tag_uids: readList(plays.tag_uids),
     valuations,
     latest_method: latest?.method ?? null,
     suggestions: latest ? storedSuggestionState(latest.raw, c.env.VALUATION_CURRENCY) : null,

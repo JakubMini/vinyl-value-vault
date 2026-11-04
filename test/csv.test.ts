@@ -59,7 +59,7 @@ describe("the collection as CSV", () => {
     expect(rest).toEqual([""]);
     expect(header!.split(",")).toEqual(RECORD_CSV_COLUMNS.map((c) => c.header));
     expect(row).toBe(
-      'Portishead,Dummy,Go! Beat,,1994,,Electronic; Rock,Trip Hop,VG+,VG+,19.15,GBP,-0.5,-0.5,9.15,10,GBP,2025-01-15,suggestion,4,22.19,,,,https://www.discogs.com/release/2371512,https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX,"Ring wear, ""VG"" really"',
+      'Portishead,Dummy,Go! Beat,,1994,,Electronic; Rock,Trip Hop,VG+,VG+,19.15,GBP,-0.5,-0.5,9.15,10,GBP,2025-01-15,suggestion,4,22.19,,,,https://www.discogs.com/release/2371512,0,,,https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX,"Ring wear, ""VG"" really"',
     );
   });
 

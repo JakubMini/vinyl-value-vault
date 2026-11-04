@@ -147,6 +147,39 @@ export interface ListedRecordRow extends RecordRow {
   change_minor: number | null;
   /** Value now minus the price paid, when both are in the same currency. */
   gain_minor: number | null;
+  play_count: number;
+  last_played_at: string | null;
+  /** The record's tag UIDs as a JSON array. */
+  tag_uids: string;
+}
+
+/**
+ * A record's plays and tags, for a record aliased `r`. Both subqueries walk an index on record_id
+ * (plays' unique key, nfc_tags_record_id), so they cost about one row read per play and per tag.
+ */
+const PLAY_COLUMNS = `(SELECT COUNT(*) FROM plays p WHERE p.record_id = r.id) AS play_count,
+           (SELECT MAX(p.played_at) FROM plays p WHERE p.record_id = r.id) AS last_played_at,
+           (SELECT json_group_array(t.uid) FROM (SELECT uid FROM nfc_tags WHERE record_id = r.id ORDER BY created_at, uid) t) AS tag_uids`;
+
+export interface PlayStatsRow {
+  play_count: number;
+  first_played_at: string | null;
+  last_played_at: string | null;
+  /** A JSON array. */
+  tag_uids: string;
+}
+
+/** One record's plays and tags, for the record page. */
+export async function playStats(db: D1Database, id: number): Promise<PlayStatsRow> {
+  const row = await db
+    .prepare(
+      `SELECT ${PLAY_COLUMNS},
+         (SELECT MIN(p.played_at) FROM plays p WHERE p.record_id = r.id) AS first_played_at
+       FROM records r WHERE r.id = ?`,
+    )
+    .bind(id)
+    .first<PlayStatsRow>();
+  return row ?? { play_count: 0, first_played_at: null, last_played_at: null, tag_uids: "[]" };
 }
 
 /** The start of a change window, as a time. */
@@ -185,7 +218,8 @@ export async function listRecords(
            ${changeSince("?1")} AS change_30d_minor,
            ${second ? changeSince("?4") : "NULL"} AS change_minor,
            CASE WHEN r.purchase_price_minor IS NOT NULL AND r.purchase_currency = r.current_currency
-                THEN r.current_value_minor - r.purchase_price_minor END AS gain_minor
+                THEN r.current_value_minor - r.purchase_price_minor END AS gain_minor,
+           ${PLAY_COLUMNS}
          FROM records r
          ORDER BY r.artist COLLATE NOCASE, r.year, r.title COLLATE NOCASE
          LIMIT ?2 OFFSET ?3`,

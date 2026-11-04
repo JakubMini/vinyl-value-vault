@@ -27,7 +27,7 @@ import { type ColumnKey, COLUMNS, loadColumns, saveColumns } from "../columns";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
 import { CoverGrid } from "../CoverGrid";
 import { FilterChips, FilterDrawer, ViewTabs } from "../Filters";
-import { count, formatMinor, plural } from "../format";
+import { count, dateTime, formatMinor, plural } from "../format";
 import { type RecordPatch, useQueueRevalue, useRecords, useUpdateRecord } from "../queries";
 import { over, readRange, withRange } from "../range";
 import { Totals } from "../Totals";
@@ -364,6 +364,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   valued: "Last priced",
   forsale: "Copies for sale",
   cheapest: "Cheapest copy",
+  plays: "Plays",
 };
 
 function SortControl({ selection, onChange }: { selection: Selection; onChange: (next: Selection) => void }) {
@@ -547,6 +548,13 @@ function RecordRow({ record: r, columns, ticked, onToggle }: { record: ListedRec
       const when = r.discogs_added_at ?? r.created_at;
       return when ? <When iso={when} /> : dash;
     },
+    plays: () =>
+      r.play_count > 0 ? (
+        <span title={r.last_played_at ? `Last played ${dateTime(r.last_played_at)}` : undefined}>{count(r.play_count)}</span>
+      ) : (
+        dash
+      ),
+    tag: () => (r.tag_uids.length > 0 ? <code className="uid">{r.tag_uids.join(", ")}</code> : dash),
   };
   const spec = new Map(COLUMNS.map((c) => [c.key, c]));
   const gone = r.discogs_removed_at !== null;

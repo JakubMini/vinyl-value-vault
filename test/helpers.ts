@@ -252,6 +252,9 @@ export function listedRecord(overrides: Partial<ListedRecord> = {}): ListedRecor
     // The window's figure is the 30-day one unless a test says otherwise, as the API does by default.
     change_minor: overrides.change_30d_minor ?? null,
     gain_minor: null,
+    play_count: 0,
+    last_played_at: null,
+    tag_uids: [],
     ...overrides,
   };
 }

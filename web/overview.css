@@ -188,3 +188,19 @@ a.ov-pill:hover {
     font-size: 40px;
   }
 }
+
+/* Recently played: one row of covers, six wide, three on a phone. */
+
+.ov-shelf .covers {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .ov-shelf .covers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ov-shelf .cover-tile:nth-child(n + 4) {
+    display: none;
+  }
+}

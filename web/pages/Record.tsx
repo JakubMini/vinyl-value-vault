@@ -7,7 +7,8 @@ import { annualisedReturn, standing } from "../../src/insights";
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { ApiError } from "../api";
 import { ErrorState, Loading, MoneyChange, When } from "../components";
-import { count, dateTime, formatMinor } from "../format";
+import { Disc } from "../CoverGrid";
+import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
 import { Listen } from "../Listen";
@@ -37,6 +38,7 @@ export function Record() {
       </div>
       <div className="rec-rows">
         <YourCopy record={r} />
+        <Plays record={r} />
         <Listen record={r} />
       </div>
     </section>
@@ -56,7 +58,10 @@ function Header({ record: r }: { record: RecordDetail }) {
   const everything = [r.artist, r.label, r.catalogue_number, r.country, r.year, r.format].filter(Boolean).join(" · ");
   return (
     <div className="rec-head">
-      {r.cover_image_url ? <img src={r.cover_image_url} alt={`Cover of ${r.title}`} className="cover" /> : <div className="cover" />}
+      <div className="sleeve rec-sleeve">
+        <Disc />
+        {r.cover_image_url ? <img src={r.cover_image_url} alt={`Cover of ${r.title}`} className="cover" /> : <div className="cover" />}
+      </div>
       <div className="rec-title">
         <h1>{r.title}</h1>
         <p className="rec-meta" title={hidden ? everything : undefined}>
@@ -443,6 +448,33 @@ const dayFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "sho
 function day(date: string): string {
   const t = Date.parse(`${date}T00:00:00.000Z`);
   return Number.isFinite(t) ? dayFormat.format(t) : date;
+}
+
+/** How often it has been on the stand, read from the NFC tag in its sleeve, and which tags those are. */
+function Plays({ record: r }: { record: RecordDetail }) {
+  return (
+    <div className="rec-row">
+      <h2 className="rec-row-label">Plays</h2>
+      <ul className="rec-dots rec-row-body">
+        <li>{r.play_count === 0 ? "not played yet" : plural(r.play_count, "play")}</li>
+        {r.last_played_at ? (
+          <li>
+            last <When iso={r.last_played_at} />
+          </li>
+        ) : null}
+        {r.first_played_at && r.play_count > 1 ? <li>first {day(r.first_played_at.slice(0, 10))}</li> : null}
+        {r.tag_uids.length === 0 ? (
+          <li className="muted">no NFC tag</li>
+        ) : (
+          r.tag_uids.map((uid) => (
+            <li key={uid}>
+              tag <code className="uid">{uid}</code>
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  );
 }
 
 /** What is said about this copy, in one line, with the form one click away. Grading happens here. */

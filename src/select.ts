@@ -7,11 +7,11 @@
 import type { ListedRecord } from "./api-types";
 import { GRADES, type Grade } from "./grades";
 
-export type SortKey = "artist" | "title" | "year" | "label" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added" | "forsale" | "cheapest";
+export type SortKey = "artist" | "title" | "year" | "label" | "media" | "sleeve" | "value" | "change" | "gain" | "valued" | "added" | "forsale" | "cheapest" | "plays";
 export type SortDir = "asc" | "desc";
 export type Status = "collection" | "priced" | "waiting" | "problem" | "gone" | "all";
 
-export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "label", "media", "sleeve", "value", "change", "gain", "valued", "added", "forsale", "cheapest"];
+export const SORT_KEYS: readonly SortKey[] = ["artist", "title", "year", "label", "media", "sleeve", "value", "change", "gain", "valued", "added", "forsale", "cheapest", "plays"];
 
 export const STATUSES: readonly { value: Status; label: string }[] = [
   { value: "collection", label: "In the collection" },
@@ -116,6 +116,7 @@ export const FIRST_DIR: Readonly<Record<SortKey, SortDir>> = {
   added: "desc",
   forsale: "asc",
   cheapest: "desc",
+  plays: "desc",
 };
 
 /** The URL parameters a selection is kept in. Anything else in the URL belongs to someone else. */
@@ -380,6 +381,7 @@ const SORTS: Record<SortKey, (r: ListedRecord) => string | number | null> = {
   added: (r) => r.discogs_added_at ?? r.created_at,
   forsale: (r) => r.current_num_for_sale,
   cheapest: (r) => r.current_lowest_listing_minor,
+  plays: (r) => r.play_count || null,
 };
 
 function compare(a: string | number, b: string | number): number {

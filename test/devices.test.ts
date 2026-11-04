@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, PlaysRecorded, RecordsPage } from "../src/api-types";
+import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, PlaysRecorded, RecordDetail, RecordsPage } from "../src/api-types";
 import { api, expectAllMocksUsed, rawFetch, resetDatabase, seedRecord } from "./helpers";
 
 beforeEach(resetDatabase);
@@ -229,6 +229,33 @@ describe("plays", () => {
     expect(await res.json<PlaysRecorded>()).toEqual({ recorded: 1 });
     const [play] = await rows();
     expect(Date.now() - Date.parse(play!.played_at as string)).toBeLessThan(60_000);
+  });
+
+  it("shows each record's play count, last and first play and tags in the list and on its page", async () => {
+    const token = await linkedScreen();
+    const played = await seedRecord({ artist: "Bonobo", title: "Migration" });
+    const quiet = await seedRecord({ artist: "Air", title: "Moon Safari" });
+    await screen("/tags/04C67BA5892681", { method: "PUT", token, json: { record_id: played.id } });
+    await screen("/tags/04112233445566", { method: "PUT", token, json: { record_id: played.id } });
+    await log(
+      [
+        { record_id: played.id, played_at: "2026-11-01T09:00:00Z" },
+        { record_id: played.id, played_at: "2026-11-02T19:40:00Z" },
+      ],
+      token,
+    );
+
+    const list = (await (await api("/records")).json<RecordsPage>()).records;
+    expect(list.find((r) => r.id === played.id)).toMatchObject({
+      play_count: 2,
+      last_played_at: "2026-11-02T19:40:00.000Z",
+      tag_uids: expect.arrayContaining(["04C67BA5892681", "04112233445566"]),
+    });
+    expect(list.find((r) => r.id === quiet.id)).toMatchObject({ play_count: 0, last_played_at: null, tag_uids: [] });
+
+    const detail = await (await api(`/records/${played.id}`)).json<RecordDetail>();
+    expect(detail).toMatchObject({ play_count: 2, first_played_at: "2026-11-01T09:00:00.000Z", last_played_at: "2026-11-02T19:40:00.000Z" });
+    expect(detail.tag_uids).toHaveLength(2);
   });
 
   it("refuses a malformed batch, and needs a token", async () => {

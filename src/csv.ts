@@ -53,6 +53,9 @@ export const RECORD_CSV_COLUMNS: readonly { header: string; value: (r: ListedRec
   { header: "Added to Discogs", value: (r) => r.discogs_added_at },
   { header: "Gone from Discogs", value: (r) => r.discogs_removed_at },
   { header: "Discogs", value: (r) => (r.discogs_release_id === null ? null : `https://www.discogs.com/release/${r.discogs_release_id}`) },
+  { header: "Plays", value: (r) => r.play_count },
+  { header: "Last played", value: (r) => r.last_played_at },
+  { header: "NFC tags", value: (r) => r.tag_uids.join("; ") },
   { header: "Spotify", value: (r) => (r.spotify_album_id === null ? null : spotifyAlbumUrl(r.spotify_album_id)) },
   { header: "Notes", value: (r) => r.notes },
 ];
