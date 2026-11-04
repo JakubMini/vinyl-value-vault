@@ -8,8 +8,9 @@
  * the same page, so the tooltip never holds information hostage. A second series, for context
  * rather than the point, is drawn dashed in grey on the same scale, with a legend.
  */
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { valueScale } from "../src/scale";
+import { useWidth } from "./chart";
 
 export interface ChartPoint {
   t: number;
@@ -45,19 +46,6 @@ function tickFormat(span: number): (t: number) => string {
   if (span <= 36 * HOUR) return (t) => timeOfDay.format(t);
   if (span <= 120 * 24 * HOUR) return (t) => dayMonth.format(t);
   return (t) => monthYear.format(t);
-}
-
-function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => setWidth(entry?.contentRect.width ?? 0));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width];
 }
 
 export function LineChart<P extends ChartPoint>({ points, label, formatValue, formatTime, describe, secondary, seriesLabel = "Value", height = 240 }: Props<P>) {

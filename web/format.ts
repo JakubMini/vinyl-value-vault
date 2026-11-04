@@ -33,6 +33,11 @@ export function count(n: number): string {
   return countFormat.format(n);
 }
 
+/** Money to the whole unit, for axes and round figures: "£1,250". */
+export function formatWhole(minor: number, currency: string): string {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 0 }).format(minor / 100);
+}
+
 /** "1 record", "163 records". */
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${count(n)} ${n === 1 ? one : many}`;

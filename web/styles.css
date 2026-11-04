@@ -28,6 +28,11 @@
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* The record itself: black in both themes, the label in the accent. */
+  /* Ordered steps of the accent for split bars, faint to strong; validated against --page. */
+  --seq-1: #ec9466;
+  --seq-2: #d9622a;
+  --seq-3: #b13a0b;
+  --seq-4: #6b260f;
   --vinyl: #121110;
   --groove: rgba(255, 255, 255, 0.07);
   --sheen: rgba(255, 255, 255, 0.14);
@@ -64,6 +69,10 @@
     --chart-grid: #2a2725;
     --chart-axis: #3a3633;
     --chart-tick: #9b948a;
+    --seq-1: #7c2d12;
+    --seq-2: #c2410c;
+    --seq-3: #f97316;
+    --seq-4: #fdba74;
     --vinyl: #1d1b19;
     --groove: rgba(255, 255, 255, 0.07);
     --sheen: rgba(255, 255, 255, 0.16);
@@ -1048,16 +1057,24 @@ a.chip {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* Every row shares the list's columns (subgrid), so all the tracks are one length and the bars one scale. */
 .bars {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  grid-template-columns: minmax(96px, 168px) 1fr auto;
+  gap: 6px 10px;
+}
+.bars > li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
 }
 .bar-row {
   display: grid;
-  grid-template-columns: minmax(96px, 168px) 1fr auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: 10px;
   min-height: 24px;
@@ -1108,8 +1125,10 @@ a.bar-row:hover .bar-fill {
   background: var(--accent-ink);
 }
 @media (max-width: 640px) {
-  .bar-row {
+  .bars {
     grid-template-columns: minmax(72px, 112px) 1fr auto;
+  }
+  .bar-row {
     font-size: 13px;
   }
   .bar-detail {
