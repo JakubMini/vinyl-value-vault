@@ -52,8 +52,17 @@ export interface ApiRecord {
   updated_at: string;
 }
 
-/** A record in the collection list, with three figures worked out by the API. */
-export interface ListedRecord extends ApiRecord {
+/** How often a record has been on the stand, and the NFC tags in its sleeve. */
+export interface PlayStats {
+  /** Plays logged by a screen reading the record's tag. */
+  play_count: number;
+  last_played_at: string | null;
+  /** The UIDs of the tags that open this record, as upper-case hex. A worn sticker is replaced, so there may be several. */
+  tag_uids: string[];
+}
+
+/** A record in the collection list, with three figures worked out by the API, and its plays. */
+export interface ListedRecord extends ApiRecord, PlayStats {
   /** Value now minus value 30 days ago (or at its first price, if that was more recent). Always 30 days, whatever the page was asked for. */
   change_30d_minor: number | null;
   /** The same over the window the page was asked for (RecordsPage.change_days). Equal to change_30d_minor by default. */
@@ -95,8 +104,9 @@ export interface QueueResponse {
  */
 export type SuggestionState = "available" | "unavailable" | "no_data" | "wrong_currency";
 
-/** A record with its price history, as the record page shows it. */
-export interface RecordDetail extends ApiRecord {
+/** A record with its price history and plays, as the record page shows it. */
+export interface RecordDetail extends ApiRecord, PlayStats {
+  first_played_at: string | null;
   /** Newest first. */
   valuations: ValuationPoint[];
   /** How the latest price from Discogs was worked out, or null if it has never been priced. */

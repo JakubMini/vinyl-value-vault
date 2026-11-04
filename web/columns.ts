@@ -1,7 +1,7 @@
 /** Which columns the collection table shows. The choice is remembered in this browser only. */
 import type { SortKey } from "../src/select";
 
-export type ColumnKey = "year" | "label" | "catno" | "format" | "media" | "sleeve" | "value" | "change" | "gain" | "forsale" | "cheapest" | "valued" | "added";
+export type ColumnKey = "year" | "label" | "catno" | "format" | "media" | "sleeve" | "value" | "change" | "gain" | "forsale" | "cheapest" | "valued" | "added" | "plays" | "tag";
 
 export interface ColumnSpec {
   key: ColumnKey;
@@ -31,6 +31,8 @@ export const COLUMNS: readonly ColumnSpec[] = [
   { key: "cheapest", label: "Cheapest", sort: "cheapest", numeric: true, narrow: true, shown: false },
   { key: "valued", label: "Priced", sort: "valued", narrow: true, shown: false },
   { key: "added", label: "Added", sort: "added", narrow: true, shown: false },
+  { key: "plays", label: "Plays", hint: "Times a screen read its NFC tag", sort: "plays", numeric: true, narrow: true, shown: true },
+  { key: "tag", label: "NFC tag", narrow: true, shown: false },
 ];
 
 // Version 2 came with a quieter default set; a choice saved against the old one is not carried over.

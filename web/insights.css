@@ -1,47 +1,6 @@
 /*
- * Insights: the figures at the top are a row of numbers, not a row of boxes. Each sits after a
- * hairline; the number leads and a short label follows. Tokens only, from styles.css.
+ * Insights: a row of figures (`.stats`, in styles.css), then the breakdowns. Tokens only.
  */
-
-.ins-figures {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px 20px;
-}
-
-.ins-figures > li {
-  min-width: 0;
-  padding-left: 14px;
-  border-left: 1px solid var(--hairline);
-}
-
-.ins-figure {
-  display: grid;
-  gap: 2px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.ins-figure-value {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.ins-figure-label {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-a.ins-figure:hover .ins-figure-label {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 .ins-more {
   font-size: 14px;
@@ -54,12 +13,171 @@ a.ins-figure:hover .ins-figure-label {
   text-underline-offset: 2px;
 }
 
-@media (max-width: 640px) {
-  .ins-figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
-  .ins-figure-value {
-    font-size: 20px;
+/* --- The page ------------------------------------------------------------------------------- */
+
+.ins-head h1 {
+  margin: 0;
+}
+
+/* Each section: its question as a label, then its charts. */
+.ins-section > * + * {
+  margin-top: 20px;
+}
+
+.ins-part-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ins-part-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.ins-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px 48px;
+}
+
+.ins-note {
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+@media (max-width: 640px) {
+  .ins-pair {
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* --- Split bar: one whole in a few ordered parts, figures in the legend beside it ----------- */
+
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+
+.split-seg {
+  min-width: 3px;
+  flex-basis: 0;
+}
+
+.split-seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.split-seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.split-seg:only-child {
+  border-radius: 4px;
+}
+
+.tone-0 {
+  background: var(--chart-axis);
+}
+.tone-1 {
+  background: var(--seq-1);
+}
+.tone-2 {
+  background: var(--seq-2);
+}
+.tone-3 {
+  background: var(--seq-3);
+}
+.tone-4 {
+  background: var(--seq-4);
+}
+
+.split-legend {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+}
+
+.split-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.split-item:hover .split-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.split-swatch {
+  align-self: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.split-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-detail {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* --- Columns and dots ----------------------------------------------------------------------- */
+
+.column {
+  fill: var(--series-1);
+}
+
+.column-active {
+  fill: var(--accent-ink);
+}
+
+.dot {
+  fill: var(--series-1);
+  fill-opacity: 0.72;
+  stroke: var(--page);
+  stroke-width: 2;
+}
+
+.dot-active {
+  fill-opacity: 1;
+  stroke-width: 3;
+}
+
+.scatter.is-picking {
+  cursor: pointer;
+}
+
+/* A reference line: a solid hairline, darker than the grid. */
+.chart-marker {
+  stroke: var(--chart-tick);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+.chart-axis-label {
+  margin-top: 2px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.ins .ins-head + .stats {
+  margin-top: 24px;
 }

@@ -8,17 +8,7 @@ import type { ListedRecord } from "./api-types";
 import { GRADES } from "./grades";
 import { decadeOf, FORMAT_KINDS, isScarce, parseFormat, SCARCE_COPIES, type Selection } from "./select";
 
-export type BreakdownKey = "decade" | "kind" | "grade" | "genre" | "style" | "label" | "artist";
-
-export const BREAKDOWNS: readonly { key: BreakdownKey; label: string }[] = [
-  { key: "decade", label: "Decade" },
-  { key: "kind", label: "Format" },
-  { key: "grade", label: "Grade" },
-  { key: "genre", label: "Genre" },
-  { key: "style", label: "Style" },
-  { key: "label", label: "Label" },
-  { key: "artist", label: "Artist" },
-];
+export type BreakdownKey = "decade" | "kind" | "grade" | "sleeve" | "genre" | "style" | "label" | "artist";
 
 /** Cuts where one record can fall into several slices, so the shares can add up to more than one. */
 export const OVERLAPPING: readonly BreakdownKey[] = ["genre", "style"];
@@ -69,6 +59,12 @@ const GROUPINGS: Record<BreakdownKey, Grouping> = {
     selection: (k) => ({ grade: k as Selection["grade"] }),
     order: GRADES,
   },
+  sleeve: {
+    of: (r) => r.sleeve_condition,
+    label: (k) => k,
+    selection: (k) => ({ sleeve: k as Selection["sleeve"] }),
+    order: GRADES,
+  },
   genre: {
     of: (r) => (r.genres.length > 0 ? r.genres : NO_GENRE),
     label: (k) => k,
@@ -117,11 +113,12 @@ function withShares(slices: Slice[], total: number): Slice[] {
 
 /**
  * The collection cut by one key. A known small set (decades, formats, grades) comes in its
- * natural order; an open set (genres, styles, labels, artists) comes by value, the top `limit`
- * and the rest folded into "Others". Shares are of the whole priced collection, so where a
- * record can sit in several slices (its genres) they can add up to more than one.
+ * natural order; an open set (genres, styles, labels, artists) comes by value, or by how many
+ * records when `rank` says so, the top `limit` and the rest folded into "Others". Shares are of
+ * the whole priced collection, so where a record can sit in several slices (its genres) they can
+ * add up to more than one.
  */
-export function breakdown(records: readonly ListedRecord[], by: BreakdownKey, currency: string, limit = 12): Slice[] {
+export function breakdown(records: readonly ListedRecord[], by: BreakdownKey, currency: string, limit = 12, rank: "value" | "count" = "value"): Slice[] {
   const g = GROUPINGS[by];
   const slices = new Map<string, Slice>();
   for (const r of records) {
@@ -139,7 +136,11 @@ export function breakdown(records: readonly ListedRecord[], by: BreakdownKey, cu
   } else if (by === "decade") {
     ordered = [...slices.values()].sort((a, b) => (a.key === UNKNOWN_YEAR ? 1 : b.key === UNKNOWN_YEAR ? -1 : text.compare(a.key, b.key)));
   } else {
-    ordered = [...slices.values()].sort((a, b) => b.value_minor - a.value_minor || b.count - a.count || text.compare(a.key, b.key));
+    ordered = [...slices.values()].sort((a, b) =>
+      rank === "count"
+        ? b.count - a.count || b.value_minor - a.value_minor || text.compare(a.key, b.key)
+        : b.value_minor - a.value_minor || b.count - a.count || text.compare(a.key, b.key),
+    );
   }
 
   if (ordered.length > limit + 1) {
@@ -206,6 +207,126 @@ export function concentration(records: readonly ListedRecord[], currency: string
     top_share: total > 0 ? topTotal / total : 0,
     median_minor: median,
     mean_minor: n === 0 ? null : Math.round(total / n),
+  };
+}
+
+export interface Tier {
+  key: "top" | "middle" | "bottom";
+  label: string;
+  count: number;
+  value_minor: number;
+  /** Part of all the priced value, 0 to 1. */
+  share: number;
+}
+
+export interface Tiers {
+  priced: number;
+  total_minor: number;
+  /** The most valuable tenth, the next four tenths, the bottom half, by value. Empty when nothing is priced. */
+  tiers: Tier[];
+  /** The fewest records that together hold at least half the value. */
+  half_count: number;
+}
+
+/** How unevenly the value is spread: what the top tenth, the next four tenths and the bottom half each hold. */
+export function tiers(records: readonly ListedRecord[], currency: string): Tiers {
+  const values = records
+    .filter((r) => r.current_value_minor !== null && r.current_currency === currency)
+    .map((r) => r.current_value_minor!)
+    .sort((a, b) => b - a);
+  const n = values.length;
+  const total = values.reduce((sum, v) => sum + v, 0);
+  if (n === 0) return { priced: 0, total_minor: 0, tiers: [], half_count: 0 };
+  const top = Math.max(1, Math.round(n * 0.1));
+  const middle = Math.max(0, Math.round(n * 0.5) - top);
+  const cuts: [Tier["key"], string, number, number][] = [
+    ["top", "Top 10%", 0, top],
+    ["middle", "Next 40%", top, top + middle],
+    ["bottom", "Bottom half", top + middle, n],
+  ];
+  const out = cuts
+    .map(([key, label, from, to]) => {
+      const value = values.slice(from, to).reduce((sum, v) => sum + v, 0);
+      return { key, label, count: to - from, value_minor: value, share: total > 0 ? value / total : 0 };
+    })
+    .filter((t) => t.count > 0);
+  let running = 0;
+  let half = 0;
+  while (half < n && running * 2 < total) running += values[half++]!;
+  return { priced: n, total_minor: total, tiers: out, half_count: half };
+}
+
+export interface YearBin {
+  year: number;
+  count: number;
+  value_minor: number;
+}
+
+/** Records per release year, every year from the oldest to the newest (empty years at zero), and how many have no year. */
+export function byYear(records: readonly ListedRecord[], currency: string): { years: YearBin[]; unknown: number } {
+  const known = records.filter((r) => r.year !== null && r.year > 0);
+  if (known.length === 0) return { years: [], unknown: records.length };
+  const first = Math.min(...known.map((r) => r.year!));
+  const last = Math.max(...known.map((r) => r.year!));
+  const years: YearBin[] = Array.from({ length: last - first + 1 }, (_, i) => ({ year: first + i, count: 0, value_minor: 0 }));
+  for (const r of known) {
+    const bin = years[r.year! - first]!;
+    bin.count += 1;
+    if (r.current_value_minor !== null && r.current_currency === currency) bin.value_minor += r.current_value_minor;
+  }
+  return { years, unknown: records.length - known.length };
+}
+
+export interface Scarcity {
+  /** The copies-for-sale line: SCARCE_COPIES or fewer is scarce. */
+  at: number;
+  scarce: { count: number; median_minor: number | null };
+  rest: { count: number; median_minor: number | null };
+}
+
+function median(values: number[]): number | null {
+  const v = [...values].sort((a, b) => a - b);
+  const n = v.length;
+  return n === 0 ? null : n % 2 === 1 ? v[(n - 1) / 2]! : Math.round((v[n / 2 - 1]! + v[n / 2]!) / 2);
+}
+
+/**
+ * Whether records few people are selling are worth more: the typical (median) value either side
+ * of the scarcity line. The median, because one very valuable record would drag an average.
+ */
+export function scarcity(records: readonly ListedRecord[], currency: string): Scarcity {
+  const side = (rows: readonly ListedRecord[]) => ({
+    count: rows.length,
+    median_minor: median(rows.filter((r) => r.current_value_minor !== null && r.current_currency === currency).map((r) => r.current_value_minor!)),
+  });
+  const known = records.filter((r) => r.current_num_for_sale !== null);
+  return { at: SCARCE_COPIES, scarce: side(known.filter(isScarce)), rest: side(known.filter((r) => !isScarce(r))) };
+}
+
+export interface Listening {
+  records: number;
+  /** Records played at least once. */
+  played: number;
+  plays: number;
+  /** The priced value of records never played. */
+  unplayed_value_minor: number;
+  /** The most played, most first, then the most recent. */
+  most: ListedRecord[];
+}
+
+/** How much of the collection gets played, and how much value sits on the shelf unplayed. */
+export function listening(records: readonly ListedRecord[], currency: string, top = 8): Listening {
+  const played = records.filter((r) => r.play_count > 0);
+  return {
+    records: records.length,
+    played: played.length,
+    plays: played.reduce((sum, r) => sum + r.play_count, 0),
+    unplayed_value_minor: records
+      .filter((r) => r.play_count === 0 && r.current_value_minor !== null && r.current_currency === currency)
+      .reduce((sum, r) => sum + r.current_value_minor!, 0),
+    most: [...played]
+      .sort((a, b) => b.play_count - a.play_count || (b.last_played_at ?? "").localeCompare(a.last_played_at ?? ""))
+      .slice(0, top),
   };
 }
 

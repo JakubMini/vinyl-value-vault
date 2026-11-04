@@ -34,11 +34,13 @@ A serverless app that keeps my vinyl collection, prices each record from the Dis
 
 | Page | What's on it |
 | --- | --- |
-| Overview | Total value, what price moves did to it (a week to all time), a chart of it over time, biggest risers and fallers. Gain on what I paid, and records waiting for a price, appear only when there are some. |
-| Collection | A table or a wall of covers, most valuable first. One toolbar: search, sort, and a drawer of filters (grade, decade, format, genre, label, value and more). Tabs for risers, fallers and a to-do list: no price or no Spotify link yet. Totals follow the filter, and the filter lives in the URL. Pick columns, export CSV, tick records to grade or re-price them together. |
-| Record | The value first, with its rank in the collection. Price history beside the cheapest copy for sale, and Discogs' price at my grade and the grades either side (all eight a click away). My copy in one line: grades, what I paid, the yearly gain. One click opens the form to grade it. A compact Spotify player, more by the same artist or label, and re-pricing and deleting in a ⋯ menu. |
-| Insights | A row of headline figures, most of them links into the collection. Value by decade, format, grade, genre, style, label or artist; price bands; how the collection grew, once records have joined on more than one day. Built from data the table already loaded, so no extra reads. |
+| Overview | Total value and what price moves did to it (a week to all time), with a row of figures (records, plays, what waits for a price) beside the record last on the turntable, its sleeve large and the record half out. Then the value over time, the records played before that, and the biggest risers and fallers, all as covers. Gain on what I paid appears only when there is some. |
+| Collection | A wall of covers by default, or a table, most valuable first; point at a cover and its record slides out of the sleeve. One toolbar: search, sort, and a drawer of filters (grade, decade, format, genre, label, value and more). Tabs for risers, fallers and a to-do list: no price or no Spotify link yet. Totals follow the filter, and the filter lives in the URL. Pick columns (plays and NFC tag among them), sort by plays, export CSV, tick records to grade or re-price them together. |
+| Record | The sleeve large with its record half out, beside the title, artist and pressing, then three figures: value and rank, plays, grades. Price history beside the cheapest copy for sale, and Discogs' price at my grade and the grades either side (all eight a click away). My copy in one line: grades, what I paid, the yearly gain. Its plays in another: how many, the first and last, and the UID of each NFC tag in its sleeve. One click opens the form to grade it. A compact Spotify player, re-pricing and deleting in a ⋯ menu, and more by the same artist as covers at the foot. |
+| Insights | The collection taken apart, one question per section, charts and figures only, no commentary: where the money is (top tenth against bottom half, the most valuable as covers, value bands), when it was pressed (a column per year, value per record by decade), genres and styles, artists and labels, media and sleeve grades, rarity against value (every record as a dot, both axes logarithmic) and listening (played against never played, most played). Built from data the table already loaded, so no extra reads. |
 | Sync | Run or preview a Discogs sync, and see the recent ones. A dot in the header, on every page, says how the last one went. |
+
+The dashboard follows the system's light or dark setting until the sun/moon button in the header picks one, which this browser then remembers.
 
 <table>
   <tr>
@@ -216,7 +218,7 @@ npm run egress:here
 | Way out | [Tunnel](https://developers.cloudflare.com/tunnel/) + [Workers VPC](https://developers.cloudflare.com/workers-vpc/) *(beta)* | Discogs calls leave from my address, with nothing on the laptop open to the internet. |
 | HTTP | [Hono](https://hono.dev/) | Small, fast, well typed, made for Workers. |
 | Validation | [Zod](https://zod.dev/) | Every body and query string is checked before it touches the database. |
-| Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/) + [TanStack Query](https://tanstack.com/query) | One deploy, one origin with the API. Plain CSS; charts are hand-drawn SVG, no chart library. |
+| Dashboard | [React](https://react.dev/) + [Vite](https://vite.dev/) + [TanStack Query](https://tanstack.com/query) | One deploy, one origin with the API. Plain CSS, each colour a `light-dark()` pair so the theme toggle only flips `color-scheme`; no cards: sections are set apart by space and hairlines under small upper-case labels, figures are a number with a short label, the covers carry the colour, and the vinyl discs are CSS gradients, not images. Charts are hand-drawn SVG, no chart library. |
 | Sign-in | [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) | A login page without writing one. The Worker checks the token itself, so a misconfiguration locks the door. |
 | Tests | [Vitest](https://vitest.dev/) in workerd + [MSW](https://mswjs.io/) | The real runtime and a real local D1; Discogs mocked at the network layer. |
 | CI | GitHub Actions | Types, typecheck, tests and a dry-run deploy on every pull request. |
@@ -247,9 +249,9 @@ Everything lives under `/api`. Every route except `/api/health` and the two `/ap
 | --- | --- |
 | `GET /api/health` | Liveness. No key needed. |
 | `GET /api/collection?days=` | Total value, counts, when the last price came in, and a total per day (30 days by default). |
-| `GET /api/records?limit=&offset=&change_days=` | The collection, A–Z, with change over a window, gain on cost, and how each price was found. |
+| `GET /api/records?limit=&offset=&change_days=` | The collection, A–Z, with change over a window, gain on cost, how each price was found, play count, last play and NFC tag UIDs. |
 | `POST /api/records` | Add by `discogs_release_id`, or `artist` and `title`. Priced at once unless `?value=false`. |
-| `GET /api/records/:id?limit=` | One record, its price history, and Discogs' price at every grade. |
+| `GET /api/records/:id?limit=` | One record, its price history, Discogs' price at every grade, and its plays (count, first, last) and NFC tag UIDs. |
 | `PATCH /api/records/:id` | Edit. A new grade re-prices from stored suggestions. Takes a Spotify link, URI or id. |
 | `DELETE /api/records/:id` | Remove it, and keep the sync from bringing it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
@@ -441,6 +443,9 @@ vite.config.ts   one build for the dashboard and the Worker
 - [x] Spotify links
 - [x] Choose columns, export CSV
 - [x] A wall of covers
+- [x] Plays and NFC tags on every record; a flatter, vinyl-themed look
+- [x] Insights rebuilt: one question per section, charts only
+- [x] A light and dark toggle
 
 </details>
 

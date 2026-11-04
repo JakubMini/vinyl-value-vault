@@ -6,8 +6,9 @@ import { GRADES, type Grade } from "../../src/grades";
 import { annualisedReturn, standing } from "../../src/insights";
 import { spotifyAlbumUrl } from "../../src/spotify";
 import { ApiError } from "../api";
-import { ErrorState, Loading, MoneyChange, When } from "../components";
-import { count, dateTime, formatMinor } from "../format";
+import { ErrorState, Loading, MoneyChange, Stat, When } from "../components";
+import { CoverGrid, Disc } from "../CoverGrid";
+import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
 import { Listen } from "../Listen";
@@ -37,9 +38,37 @@ export function Record() {
       </div>
       <div className="rec-rows">
         <YourCopy record={r} />
+        <Plays record={r} />
         <Listen record={r} />
       </div>
+      <MoreBy record={r} />
     </section>
+  );
+}
+
+/** How many other records by the same artist the shelf at the foot of the page shows. */
+const MORE_BY = 6;
+
+/** Other records by the same artist, as covers, so the page leads somewhere. Nothing when there are none. */
+function MoreBy({ record: r }: { record: RecordDetail }) {
+  const records = useRecords();
+  const others = (records.data ?? []).filter((x) => x.id !== r.id && x.artist === r.artist && x.discogs_removed_at === null);
+  // Discogs files compilations under "Various": not an artist worth a shelf.
+  if (others.length === 0 || /^various( artists)?$/i.test(r.artist)) return null;
+  return (
+    <div className="card">
+      <div className="row-between">
+        <h2 className="card-title">More by {r.artist}</h2>
+        {others.length > MORE_BY ? (
+          <Link to={collectionLink({ artist: r.artist, status: "all" })} className="more-link">
+            See all {count(others.length + 1)}
+          </Link>
+        ) : null}
+      </div>
+      <div className="shelf">
+        <CoverGrid rows={others.slice(0, MORE_BY)} />
+      </div>
+    </div>
   );
 }
 
@@ -51,52 +80,36 @@ const SHORT_CATALOGUE = 14;
 
 function Header({ record: r }: { record: RecordDetail }) {
   const catalogue = r.catalogue_number && r.catalogue_number.length <= SHORT_CATALOGUE ? r.catalogue_number : null;
-  const meta = [r.artist, r.label, catalogue, r.year, r.format].filter(Boolean).join(" · ");
+  const meta = [r.label, catalogue, r.year, r.format].filter(Boolean).join(" · ");
   const hidden = Boolean(r.country) || catalogue !== r.catalogue_number;
-  const everything = [r.artist, r.label, r.catalogue_number, r.country, r.year, r.format].filter(Boolean).join(" · ");
+  const everything = [r.label, r.catalogue_number, r.country, r.year, r.format].filter(Boolean).join(" · ");
   return (
     <div className="rec-head">
-      {r.cover_image_url ? <img src={r.cover_image_url} alt={`Cover of ${r.title}`} className="cover" /> : <div className="cover" />}
-      <div className="rec-title">
-        <h1>{r.title}</h1>
-        <p className="rec-meta" title={hidden ? everything : undefined}>
-          {meta}
-        </p>
+      <div className="sleeve sleeve-out rec-sleeve">
+        <Disc />
+        {r.cover_image_url ? <img src={r.cover_image_url} alt={`Cover of ${r.title}`} className="cover" /> : <div className="cover" />}
       </div>
-      <Figure record={r} />
-      <div className="rec-extra">
+      <div className="rec-main">
         <Tags record={r} />
-        <ul className="rec-dots rec-links">
-          {r.spotify_album_id ? (
-            <li>
-              <a href={spotifyAlbumUrl(r.spotify_album_id)} target="_blank" rel="noreferrer" aria-label={`Play ${r.title} on Spotify`}>
-                <span aria-hidden="true">▶ </span>Play
-              </a>
-            </li>
-          ) : null}
-          {r.discogs_url ? (
-            <li>
-              <a href={r.discogs_url} target="_blank" rel="noreferrer">
-                Discogs ↗
-              </a>
-            </li>
-          ) : null}
-          <li>
-            <Link to={collectionLink({ artist: r.artist, status: "all" })}>More by {r.artist}</Link>
-          </li>
-          {r.label ? (
-            <li>
-              <Link to={collectionLink({ label: r.label, status: "all" })}>More on {r.label}</Link>
-            </li>
-          ) : null}
-        </ul>
+        <h1>{r.title}</h1>
+        <p className="rec-artist">
+          <Link to={collectionLink({ artist: r.artist, status: "all" })} title={`Everything by ${r.artist}`}>
+            {r.artist}
+          </Link>
+        </p>
+        {meta ? (
+          <p className="rec-meta" title={hidden ? everything : undefined}>
+            {meta}
+          </p>
+        ) : null}
         {r.discogs_removed_at ? (
-          <p>
+          <p className="rec-gone">
             <span className="badge">
               Gone from Discogs <When iso={r.discogs_removed_at} />
             </span>
           </p>
         ) : null}
+        <Summary record={r} />
       </div>
     </div>
   );
@@ -136,8 +149,8 @@ function Tags({ record: r }: { record: RecordDetail }) {
   );
 }
 
-/** The value, where it ranks, the grades, and the "⋯" menu with the rarer actions. */
-function Figure({ record: r }: { record: RecordDetail }) {
+/** The figures that matter (value and rank, plays, grades), then the links out and the "⋯" menu with the rarer actions. */
+function Summary({ record: r }: { record: RecordDetail }) {
   const records = useRecords();
   const revalue = useRevalue(r.id);
   const remove = useDeleteRecord();
@@ -174,29 +187,52 @@ function Figure({ record: r }: { record: RecordDetail }) {
   }
 
   return (
-    <div className="rec-figure">
-      <div className="rec-figure-top">
-        <div className={r.current_value ? "rec-value" : "rec-value rec-value-none"}>
-          <span className="sr-only">Worth now: </span>
-          {r.current_value ?? "Not priced yet"}
-        </div>
+    <div className="rec-summary">
+      <ul className="stats rec-stats">
+        <Stat
+          value={r.current_value ?? "—"}
+          label={rank ? `worth now, #${rank.position} of ${count(rank.of)}` : r.current_value ? "worth now" : "not priced yet"}
+          title={rank ? (rank.of > 1 ? `Worth more than ${Math.round(rank.above * 100)}% of the priced records` : "The only priced record so far") : undefined}
+          to={rank ? collectionLink({ status: "priced", sort: "value", dir: "desc" }) : undefined}
+        />
+        <Stat
+          value={count(r.play_count)}
+          label={
+            r.last_played_at ? (
+              <>
+                {r.play_count === 1 ? "play" : "plays"} · <When iso={r.last_played_at} />
+              </>
+            ) : (
+              "plays so far"
+            )
+          }
+        />
+        <Stat value={`${r.media_condition} / ${r.sleeve_condition}`} label="media / sleeve" />
+      </ul>
+      <div className="rec-actions">
+        <ul className="rec-dots rec-links">
+          {r.spotify_album_id ? (
+            <li>
+              <a href={spotifyAlbumUrl(r.spotify_album_id)} target="_blank" rel="noreferrer" aria-label={`Play ${r.title} on Spotify`}>
+                <span aria-hidden="true">▶ </span>Play on Spotify
+              </a>
+            </li>
+          ) : null}
+          {r.discogs_url ? (
+            <li>
+              <a href={r.discogs_url} target="_blank" rel="noreferrer">
+                Discogs ↗
+              </a>
+            </li>
+          ) : null}
+          {r.label ? (
+            <li>
+              <Link to={collectionLink({ label: r.label, status: "all" })}>More on {r.label}</Link>
+            </li>
+          ) : null}
+        </ul>
         <ActionsMenu label="More actions" actions={actions} />
       </div>
-      <ul className="rec-dots rec-standing">
-        {rank ? (
-          <li>
-            <Link
-              to={collectionLink({ status: "priced", sort: "value", dir: "desc" })}
-              title={rank.of > 1 ? `Worth more than ${Math.round(rank.above * 100)}% of the priced records` : "The only priced record so far"}
-            >
-              #{rank.position} of {count(rank.of)}
-            </Link>
-          </li>
-        ) : null}
-        <li title="Media grade / sleeve grade">
-          {r.media_condition} / {r.sleeve_condition}
-        </li>
-      </ul>
       <p className="rec-status" role="status">
         {status}
       </p>
@@ -443,6 +479,33 @@ const dayFormat = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "sho
 function day(date: string): string {
   const t = Date.parse(`${date}T00:00:00.000Z`);
   return Number.isFinite(t) ? dayFormat.format(t) : date;
+}
+
+/** How often it has been on the stand, read from the NFC tag in its sleeve, and which tags those are. */
+function Plays({ record: r }: { record: RecordDetail }) {
+  return (
+    <div className="rec-row">
+      <h2 className="rec-row-label">Plays</h2>
+      <ul className="rec-dots rec-row-body">
+        <li>{r.play_count === 0 ? "not played yet" : plural(r.play_count, "play")}</li>
+        {r.last_played_at ? (
+          <li>
+            played <When iso={r.last_played_at} />
+          </li>
+        ) : null}
+        {r.first_played_at && r.play_count > 1 ? <li>first {day(r.first_played_at.slice(0, 10))}</li> : null}
+        {r.tag_uids.length === 0 ? (
+          <li className="muted">no NFC tag</li>
+        ) : (
+          r.tag_uids.map((uid) => (
+            <li key={uid}>
+              tag <code className="uid">{uid}</code>
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  );
 }
 
 /** What is said about this copy, in one line, with the form one click away. Grading happens here. */

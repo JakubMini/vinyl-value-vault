@@ -1,39 +1,28 @@
 /*
- * The Overview: one number, one chart, the records that moved. Everything else on the page
- * appears only when it has something to say. Tokens from styles.css only.
+ * The Overview: what the collection is worth and the record last played, side by side; then the
+ * value over time; then shelves of covers: what was played before, and what moved in price.
+ * Tokens from styles.css only.
  */
 
-/* The total, with how it moved beside it and the counts on the right. */
+/* The value on the left, the record last on the turntable on the right. */
 
-.ov-hero {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  gap: 12px 32px;
+.ov-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px 48px;
+  align-items: end;
 }
 
-.ov-label {
+.ov-value .eyebrow {
   margin: 0;
-  color: var(--ink-2);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.ov-figure {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 4px;
 }
 
 .ov-total {
-  font-size: 56px;
+  margin: 6px 0 12px;
+  font-size: 72px;
   font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  letter-spacing: -0.035em;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -41,6 +30,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.ov-value .ov-stats {
+  margin-top: 32px;
+  max-width: 560px;
 }
 
 .ov-pill {
@@ -87,40 +81,31 @@ a.ov-pill:hover {
   border-color: currentColor;
 }
 
-.ov-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  padding-bottom: 6px;
-  color: var(--ink-2);
-  font-size: 14px;
-  text-align: right;
+/* The record last played: a big sleeve, its record half out, room left for the record. */
+.ov-last {
+  width: 300px;
 }
 
-.ov-meta-link {
-  color: inherit;
-  text-decoration: none;
+.ov-last .eyebrow {
+  margin: 0 0 12px;
 }
 
-.ov-meta-link:hover {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.ov-last .sleeve {
+  width: 220px;
 }
 
-.ov-waiting {
-  color: var(--warning);
-  font-weight: 550;
-  text-decoration: none;
+.ov-last .cover-title {
+  font-size: 17px;
+  font-weight: 600;
 }
 
-.ov-waiting:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.ov-last-meta {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-muted);
 }
 
-/* Risers and fallers: one card, a tab each. */
+/* Risers and fallers: a tab each, styled as the section labels are. */
 
 .ov-tabs {
   display: flex;
@@ -129,14 +114,16 @@ a.ov-pill:hover {
 
 .ov-tab {
   font: inherit;
-  font-size: 17px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.5;
   color: var(--ink-muted);
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 2px 0 4px;
+  padding: 0 0 2px;
   cursor: pointer;
 }
 
@@ -149,42 +136,30 @@ a.ov-pill:hover {
   border-bottom-color: var(--accent);
 }
 
-.ov-more {
-  color: var(--ink-2);
-  font-size: 13px;
-  text-decoration: none;
+/* Narrow: the record last played goes under the value. */
+@media (max-width: 760px) {
+  .ov-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ov-last {
+    width: auto;
+  }
+
+  .ov-last .sleeve {
+    width: 60%;
+    max-width: 220px;
+  }
 }
 
-.ov-more:hover {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* Narrow: the counts go under the total, on one line, separated by dots. */
 @media (max-width: 640px) {
   .ov-total {
-    font-size: 44px;
-  }
-
-  .ov-meta {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 2px 0;
-    padding-bottom: 0;
-    text-align: left;
-  }
-
-  .ov-meta > * + *::before {
-    content: "·";
-    margin: 0 8px;
-    color: var(--ink-muted);
+    font-size: 52px;
   }
 }
 
 @media (max-width: 400px) {
   .ov-total {
-    font-size: 40px;
+    font-size: 44px;
   }
 }
