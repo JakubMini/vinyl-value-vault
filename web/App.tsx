@@ -7,6 +7,7 @@ import { Overview } from "./pages/Overview";
 import { Record } from "./pages/Record";
 import { Sync } from "./pages/Sync";
 import { SyncStatus } from "./SyncStatus";
+import { ThemeToggle } from "./ThemeToggle";
 import "./header.css";
 
 const NAV = [
@@ -31,7 +32,10 @@ export function App() {
               </NavLink>
             ))}
           </nav>
-          <SyncStatus />
+          <div className="topbar-end">
+            <ThemeToggle />
+            <SyncStatus />
+          </div>
         </div>
       </header>
       <main className="page">

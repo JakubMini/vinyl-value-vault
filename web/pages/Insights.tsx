@@ -1,13 +1,12 @@
 /**
- * Insights: the collection taken apart, one question per section. Each section says its answer
- * in a sentence worked out from the data, then shows the chart that backs it. Everything is
- * built from the collection list the other pages already load, so no extra reads.
+ * Insights: the collection taken apart, one question per section, each a chart or two and no
+ * commentary. Everything is built from the collection list the other pages already load, so
+ * no extra reads.
  */
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
-import { GRADES } from "../../src/grades";
 import { breakdown, type BreakdownKey, byYear, concentration, growth, listening, scarcity, type Slice, tiers, valueBands } from "../../src/insights";
 import { SCARCE_COPIES } from "../../src/select";
 import { type Bar, BarChart } from "../BarChart";
@@ -47,11 +46,6 @@ export function Insights() {
     <section className="stack ins">
       <header className="ins-head">
         <h1>Insights</h1>
-        <p className="ins-lede">
-          {plural(rows.length, "record")} worth {money(t.total_minor)}
-          {conc.median_minor !== null ? <>. A typical one is worth {money(conc.median_minor)}</> : null}
-          {t.half_count > 0 ? <>, and half the value sits in just {plural(t.half_count, "record")}</> : null}.
-        </p>
       </header>
 
       <ul className="stats">
@@ -78,12 +72,11 @@ interface Props {
   currency: string;
 }
 
-/** A section: its question as a small label, its answer as a sentence, then the evidence. */
-function Section({ title, lede, children }: { title: string; lede: ReactNode; children: ReactNode }) {
+/** A section: its question as a small label, then the charts. */
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="card ins-section">
       <h2 className="card-title">{title}</h2>
-      <p className="ins-answer">{lede}</p>
       {children}
     </section>
   );
@@ -122,31 +115,14 @@ function countBars(slices: Slice[], total: number, currency: string): Bar[] {
   });
 }
 
-/** The richest slice by average value, among those with at least `min` records so one odd record can't win. */
-function richest(slices: Slice[], min = 3): Slice | null {
-  const fair = slices.filter((s) => s.selection !== null && s.priced >= min);
-  return fair.sort((a, b) => average(b)! - average(a)!)[0] ?? null;
-}
-
 function Money({ rows, currency }: Props) {
   const t = tiers(rows, currency);
   if (t.priced === 0) return null;
-  const top = t.tiers.find((x) => x.key === "top");
-  const bottom = t.tiers.find((x) => x.key === "bottom");
   const tones: Record<string, Part["tone"]> = { top: 4, middle: 3, bottom: 2 };
   const best = [...rows].filter((r) => r.current_value_minor !== null && r.current_currency === currency).sort((a, b) => b.current_value_minor! - a.current_value_minor!);
   const bands = valueBands(rows, currency);
-  const commonest = [...bands].sort((a, b) => b.count - a.count)[0];
   return (
-    <Section
-      title="Where the money is"
-      lede={
-        <>
-          The top 10%, just {plural(top?.count ?? 0, "record")}, hold {percent(top?.share ?? 0)} of the value.
-          {bottom ? <> The bottom half holds {percent(bottom.share)}.</> : null}
-        </>
-      }
-    >
+    <Section title="Where the money is">
       <SplitBar
         label="Value by tier"
         format={(v) => formatWhole(v, currency)}
@@ -157,7 +133,7 @@ function Money({ rows, currency }: Props) {
           <CoverGrid rows={best.slice(0, 6)} />
         </div>
       </Subsection>
-      <Subsection title={commonest && commonest.count > 0 ? `Most are worth ${commonest.label.toLowerCase()}` : "How values spread"}>
+      <Subsection title="Value bands">
         <BarChart
           label="Records in each value band"
           format={(v) => plural(v, "record")}
@@ -178,22 +154,8 @@ function Era({ rows, currency }: Props) {
   const { years, unknown } = byYear(rows, currency);
   if (years.length === 0) return null;
   const decades = breakdown(rows, "decade", currency).filter((s) => s.selection !== null);
-  const biggest = [...decades].sort((a, b) => b.count - a.count)[0];
-  const rich = richest(decades);
-  const known = years.flatMap((y) => Array<number>(y.count).fill(y.year));
-  const median = known[Math.floor((known.length - 1) / 2)];
-  const first = years[0]!.year;
   return (
-    <Section
-      title="When it was pressed"
-      lede={
-        <>
-          {biggest ? <>Most records are from the {biggest.label}: {count(biggest.count)}. </> : null}
-          The oldest is from {first}
-          {median ? <>, and half were pressed before {median}</> : null}.
-        </>
-      }
-    >
+    <Section title="When it was pressed">
       <Subsection title="Records by release year" aside={unknown > 0 ? <span className="ins-note">{count(unknown)} without a year</span> : undefined}>
         <ColumnChart
           label="Records by release year"
@@ -207,7 +169,7 @@ function Era({ rows, currency }: Props) {
           showLabel={(c, i) => Number(c.key) % 10 === 0 || (i === 0 && Number(c.key) % 10 < 7)}
         />
       </Subsection>
-      <Subsection title={rich ? `The ${rich.label} are worth most per record` : "Average value by decade"}>
+      <Subsection title="Average value by decade">
         <BarChart
           label="Average value per record, by decade"
           format={(v) => formatWhole(v, currency)}
@@ -227,24 +189,9 @@ function Era({ rows, currency }: Props) {
 function Sound({ rows, currency }: Props) {
   const genres = breakdown(rows, "genre", currency, TOP, "count");
   const styles = breakdown(rows, "style", currency, TOP, "count");
-  const top = genres.find((s) => s.selection !== null);
-  if (!top) return null;
-  const rich = richest(breakdown(rows, "genre", currency, 100, "count"));
+  if (genres.length === 0) return null;
   return (
-    <Section
-      title="What it sounds like"
-      lede={
-        <>
-          {top.label} is on {percent(top.count / rows.length)} of the records.
-          {rich && rich.key !== top.key ? (
-            <>
-              {" "}
-              {rich.label} records are worth the most on average, {formatWhole(average(rich)!, currency)} each.
-            </>
-          ) : null}
-        </>
-      }
-    >
+    <Section title="What it sounds like">
       <div className="ins-pair">
         <Subsection title="Genres">
           <BarChart label="Records by genre" format={count} bars={countBars(genres, rows.length, currency)} />
@@ -253,7 +200,6 @@ function Sound({ rows, currency }: Props) {
           <BarChart label="Records by style" format={count} bars={countBars(styles, rows.length, currency)} />
         </Subsection>
       </div>
-      <p className="ins-note">A record can carry several genres and styles, so the shares add up to more than the whole.</p>
     </Section>
   );
 }
@@ -261,19 +207,9 @@ function Sound({ rows, currency }: Props) {
 function People({ rows, currency }: Props) {
   const artists = breakdown(rows, "artist", currency, TOP, "count").filter((s) => !/^various( artists)?$/i.test(s.key));
   const labels = breakdown(rows, "label", currency, TOP, "count");
-  const artist = artists.find((s) => s.selection !== null);
-  const label = labels.find((s) => s.selection !== null);
-  if (!artist) return null;
+  if (artists.length === 0 && labels.length === 0) return null;
   return (
-    <Section
-      title="Who is on the shelf"
-      lede={
-        <>
-          {artist.label} has the most records, {count(artist.count)}
-          {label ? <>, and {label.label} is the label collected most, with {count(label.count)}</> : null}.
-        </>
-      }
-    >
+    <Section title="Who is on the shelf">
       <div className="ins-pair">
         <Subsection title="Artists">
           <BarChart label="Records by artist" format={count} bars={countBars(artists, rows.length, currency)} />
@@ -302,10 +238,8 @@ function gradeParts(rows: ListedRecord[], by: Extract<BreakdownKey, "grade" | "s
 
 function Condition({ rows, currency }: Props) {
   if (rows.length === 0) return null;
-  const good = new Set(GRADES.slice(0, GRADES.indexOf("VG+") + 1));
-  const atLeast = rows.filter((r) => good.has(r.media_condition)).length;
   return (
-    <Section title="Condition" lede={<>{percent(atLeast / rows.length)} of the records play at VG+ or better.</>}>
+    <Section title="Condition">
       <div className="ins-pair">
         <Subsection title="Media">
           <SplitBar label="Media grades" format={count} parts={gradeParts(rows, "grade", currency)} />
@@ -319,26 +253,12 @@ function Condition({ rows, currency }: Props) {
 }
 
 function Rarity({ rows, currency }: Props) {
-  const sc = scarcity(rows, currency);
   const dots = rows
     .filter((r) => r.current_num_for_sale !== null && r.current_value_minor !== null && r.current_currency === currency)
     .map((r) => ({ id: r.id, title: r.title, artist: r.artist, x: r.current_num_for_sale!, y: r.current_value_minor! }));
   if (dots.length === 0) return null;
-  const premium = sc.scarce.median_minor !== null && sc.rest.median_minor !== null && sc.rest.median_minor > 0 ? sc.scarce.median_minor / sc.rest.median_minor : null;
   return (
-    <Section
-      title="Rarity and value"
-      lede={
-        sc.scarce.median_minor !== null && sc.rest.median_minor !== null ? (
-          <>
-            A typical record with {sc.at} or fewer copies for sale is worth {formatWhole(sc.scarce.median_minor, currency)}, against {formatWhole(sc.rest.median_minor, currency)} for the rest
-            {premium !== null && premium >= 1.15 ? <>: {premium.toFixed(1)} times as much</> : premium !== null && premium <= 0.87 ? <>. Scarce is not the same as sought after</> : null}.
-          </>
-        ) : (
-          <>Each dot is a record: how many copies are for sale on Discogs against what it is worth.</>
-        )
-      }
-    >
+    <Section title="Rarity and value">
       <Scatter
         dots={dots}
         label="Value against copies for sale, one dot per record"
@@ -354,21 +274,13 @@ function Listening({ rows, currency }: Props) {
   const l = listening(rows, currency);
   if (l.played === 0) {
     return (
-      <Section title="Listening" lede="Nothing played yet. Plays appear here once a screen reads the tag in a record's sleeve.">
+      <Section title="Listening">
         {null}
       </Section>
     );
   }
   return (
-    <Section
-      title="Listening"
-      lede={
-        <>
-          {count(l.played)} of {plural(l.records, "record")} have been played, {plural(l.plays, "time")} in all. {formatWhole(l.unplayed_value_minor, currency)} of value has
-          never left the shelf.
-        </>
-      }
-    >
+    <Section title="Listening">
       <SplitBar
         label="Played and never played"
         format={count}
@@ -401,7 +313,7 @@ function Growth({ rows }: { rows: ListedRecord[] }) {
   if (points.length < 2) return null;
   const day = (t: number) => new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   return (
-    <Section title="How the collection grew" lede={<>From {day(points[0]!.t)} to today: {plural(points[points.length - 1]!.value, "record")}.</>}>
+    <Section title="How the collection grew">
       <LineChart
         points={points}
         label={`Records in the collection over time, from ${dateTime(new Date(points[0]!.t).toISOString())}`}

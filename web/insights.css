@@ -20,30 +20,9 @@
   margin: 0;
 }
 
-/* The collection in one sentence. */
-.ins-lede {
-  margin-top: 8px;
-  max-width: 46ch;
-  font-size: 22px;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-/* Each section: its question (the label), its answer (this sentence), then the evidence. */
+/* Each section: its question as a label, then its charts. */
 .ins-section > * + * {
   margin-top: 20px;
-}
-
-.ins .ins-section > .card-title + .ins-answer {
-  margin-top: 8px;
-}
-
-.ins-answer {
-  max-width: 60ch;
-  font-size: 18px;
-  line-height: 1.45;
-  color: var(--ink);
 }
 
 .ins-part-head {
@@ -73,14 +52,6 @@
 }
 
 @media (max-width: 640px) {
-  .ins-lede {
-    font-size: 19px;
-  }
-
-  .ins-answer {
-    font-size: 16px;
-  }
-
   .ins-pair {
     grid-template-columns: minmax(0, 1fr);
   }

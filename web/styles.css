@@ -1,83 +1,57 @@
 /*
  * One quiet look for the whole dashboard: sleeve paper by day, black vinyl by night, an orange
  * label for the one accent. No cards: sections are set apart by space and a hairline. Colours
- * are tokens, defined once for light and once for dark; components use the tokens, never raw
- * values. The covers and the data are the only loud things.
+ * are tokens, each one `light-dark(light, dark)`, so the scheme in force (the system's, or the
+ * one the header's toggle pins) picks the value; components use the tokens, never raw values.
+ * The covers and the data are the only loud things.
  */
 :root {
-  color-scheme: light;
-  --page: #f5f2ec;
-  --surface: #f5f2ec;
-  --surface-raised: #fffdf9;
-  --ink: #141210;
-  --ink-2: #4f4a43;
-  --ink-muted: #6e675e;
-  --hairline: #e2ddd3;
-  --border: rgba(20, 18, 16, 0.12);
-  --hover: rgba(20, 18, 16, 0.05);
-  --accent: #c2410c;
-  --accent-ink: #9a3412;
-  --on-accent: #ffffff;
-  --good: #006300;
-  --warning: #8a5a00;
-  --critical: #b42d2d;
-  --good-wash: rgba(12, 163, 12, 0.1);
-  --warning-wash: rgba(250, 178, 25, 0.16);
-  --critical-wash: rgba(208, 59, 59, 0.1);
+  color-scheme: light dark;
+  --page: light-dark(#f5f2ec, #0f0e0d);
+  --surface: light-dark(#f5f2ec, #0f0e0d);
+  --surface-raised: light-dark(#fffdf9, #1c1a18);
+  --ink: light-dark(#141210, #ffffff);
+  --ink-2: light-dark(#4f4a43, #c9c2b5);
+  --ink-muted: light-dark(#6e675e, #9b948a);
+  --hairline: light-dark(#e2ddd3, #2a2725);
+  --border: light-dark(rgba(20, 18, 16, 0.12), rgba(255, 255, 255, 0.1));
+  --hover: light-dark(rgba(20, 18, 16, 0.05), rgba(255, 255, 255, 0.05));
+  --accent: light-dark(#c2410c, #f97316);
+  --accent-ink: light-dark(#9a3412, #fdba74);
+  --on-accent: light-dark(#ffffff, #1a0d05);
+  --good: light-dark(#006300, #0ca30c);
+  --warning: light-dark(#8a5a00, #fab219);
+  --critical: light-dark(#b42d2d, #e66767);
+  --good-wash: light-dark(rgba(12, 163, 12, 0.1), rgba(12, 163, 12, 0.16));
+  --warning-wash: light-dark(rgba(250, 178, 25, 0.16), rgba(250, 178, 25, 0.14));
+  --critical-wash: light-dark(rgba(208, 59, 59, 0.1), rgba(230, 103, 103, 0.14));
   --radius: 10px;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  /* The record itself: black in both themes, the label in the accent. */
   /* Ordered steps of the accent for split bars, faint to strong; validated against --page. */
-  --seq-1: #ec9466;
-  --seq-2: #d9622a;
-  --seq-3: #b13a0b;
-  --seq-4: #6b260f;
-  --vinyl: #121110;
+  --seq-1: light-dark(#ec9466, #7c2d12);
+  --seq-2: light-dark(#d9622a, #c2410c);
+  --seq-3: light-dark(#b13a0b, #f97316);
+  --seq-4: light-dark(#6b260f, #fdba74);
+  /* The record itself: black in both themes, the label in the accent. */
+  --vinyl: light-dark(#121110, #1d1b19);
   --groove: rgba(255, 255, 255, 0.07);
-  --sheen: rgba(255, 255, 255, 0.14);
-  --label: #c2410c;
+  --sheen: light-dark(rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.16));
+  --label: light-dark(#c2410c, #f97316);
   /* Charts: the first categorical slot, and recessive chrome. */
-  --series-1: #c2410c;
-  --chart-grid: #e2ddd3;
-  --chart-axis: #c9c2b5;
-  --chart-tick: #6e675e;
+  --series-1: light-dark(#c2410c, #f97316);
+  --chart-grid: light-dark(#e2ddd3, #2a2725);
+  --chart-axis: light-dark(#c9c2b5, #3a3633);
+  --chart-tick: light-dark(#6e675e, #9b948a);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0f0e0d;
-    --surface: #0f0e0d;
-    --surface-raised: #1c1a18;
-    --ink: #ffffff;
-    --ink-2: #c9c2b5;
-    --ink-muted: #9b948a;
-    --hairline: #2a2725;
-    --border: rgba(255, 255, 255, 0.1);
-    --hover: rgba(255, 255, 255, 0.05);
-    --accent: #f97316;
-    --accent-ink: #fdba74;
-    --on-accent: #1a0d05;
-    --good: #0ca30c;
-    --warning: #fab219;
-    --critical: #e66767;
-    --good-wash: rgba(12, 163, 12, 0.16);
-    --warning-wash: rgba(250, 178, 25, 0.14);
-    --critical-wash: rgba(230, 103, 103, 0.14);
-    --series-1: #f97316;
-    --chart-grid: #2a2725;
-    --chart-axis: #3a3633;
-    --chart-tick: #9b948a;
-    --seq-1: #7c2d12;
-    --seq-2: #c2410c;
-    --seq-3: #f97316;
-    --seq-4: #fdba74;
-    --vinyl: #1d1b19;
-    --groove: rgba(255, 255, 255, 0.07);
-    --sheen: rgba(255, 255, 255, 0.16);
-    --label: #f97316;
-  }
+/* The theme toggle in the header pins one scheme; without it the system's choice stands. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
