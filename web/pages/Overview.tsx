@@ -3,8 +3,8 @@ import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { DEFAULT_SELECTION, matches, QUICK_FILTERS, type Selection, writeSelection } from "../../src/select";
-import { ErrorState, Loading, MoneyChange, When } from "../components";
-import { CoverGrid } from "../CoverGrid";
+import { ErrorState, Loading, MoneyChange, Stat, When } from "../components";
+import { CoverGrid, Disc } from "../CoverGrid";
 import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
@@ -12,8 +12,11 @@ import { useCollection, useRecords } from "../queries";
 import { over, RANGES, type Range, readRange, withRange } from "../range";
 import "../overview.css";
 
-/** How many covers the "Recently played" shelf shows: one row on a laptop. */
-const RECENT_PLAYS = 6;
+/** The last record played, then a shelf of six before it: one row on a laptop. */
+const RECENT_PLAYS = 7;
+
+/** How many risers or fallers show: a shelf. */
+const MOVERS = 6;
 
 const preset = (id: string): Partial<Selection> => QUICK_FILTERS.find((f) => f.id === id)?.preset ?? {};
 
@@ -36,8 +39,8 @@ export function Overview() {
   const all = records.data ?? [];
   const inCollection = all.filter((r) => r.discogs_removed_at === null);
   const moved = inCollection.filter((r) => r.change_minor !== null && r.change_minor !== 0);
-  const risers = moved.filter((r) => r.change_minor! > 0).sort((a, b) => b.change_minor! - a.change_minor!).slice(0, 5);
-  const fallers = moved.filter((r) => r.change_minor! < 0).sort((a, b) => a.change_minor! - b.change_minor!).slice(0, 5);
+  const risers = moved.filter((r) => r.change_minor! > 0).sort((a, b) => b.change_minor! - a.change_minor!).slice(0, MOVERS);
+  const fallers = moved.filter((r) => r.change_minor! < 0).sort((a, b) => a.change_minor! - b.change_minor!).slice(0, MOVERS);
   const marketMove = inCollection.reduce((sum, r) => sum + (r.change_minor ?? 0), 0);
   const withPurchase = inCollection.filter((r) => r.gain_minor !== null);
   const gain = withPurchase.reduce((sum, r) => sum + r.gain_minor!, 0);
@@ -50,50 +53,46 @@ export function Overview() {
     .sort((a, b) => b.last_played_at!.localeCompare(a.last_played_at!))
     .slice(0, RECENT_PLAYS);
 
+  const totalPlays = inCollection.reduce((sum, r) => sum + r.play_count, 0);
+  const [lastPlayed, ...earlier] = recentlyPlayed;
+
   return (
     <section className="stack">
-      <div className="ov-hero">
-        <div>
-          <h1 className="ov-label">Collection value</h1>
-          <div className="ov-figure">
-            <span className="ov-total">{c.total}</span>
-            {records.data ? (
-              <span className={records.isPlaceholderData ? "ov-pills refetching" : "ov-pills"}>
-                <ChangePill
-                  minor={marketMove}
-                  currency={c.currency}
-                  period={period}
-                  to={collectionOver(preset(marketMove < 0 ? "fallers" : "risers"), range)}
-                />
-                {withPurchase.length > 0 ? (
-                  <Link
-                    to={collectionLink({ paid: "yes", sort: "gain", dir: "desc" })}
-                    className="ov-pill ov-pill-quiet"
-                    title={`Across ${plural(withPurchase.length, "record")} with a price paid`}
-                  >
-                    <MoneyChange minor={gain} currency={c.currency} />
-                    <span>on what I paid</span>
-                  </Link>
-                ) : null}
-              </span>
+      <div className="ov-top">
+        <div className="ov-value">
+          <h1 className="eyebrow">Collection value</h1>
+          <div className="ov-total">{c.total}</div>
+          {records.data ? (
+            <div className={records.isPlaceholderData ? "ov-pills refetching" : "ov-pills"}>
+              <ChangePill
+                minor={marketMove}
+                currency={c.currency}
+                period={period}
+                to={collectionOver(preset(marketMove < 0 ? "fallers" : "risers"), range)}
+              />
+              {withPurchase.length > 0 ? (
+                <Link
+                  to={collectionLink({ paid: "yes", sort: "gain", dir: "desc" })}
+                  className="ov-pill ov-pill-quiet"
+                  title={`Across ${plural(withPurchase.length, "record")} with a price paid`}
+                >
+                  <MoneyChange minor={gain} currency={c.currency} />
+                  <span>on what I paid</span>
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+          <ul className="stats ov-stats">
+            <Stat value={count(c.record_count)} label="records" to="/collection" />
+            <Stat value={count(totalPlays)} label={totalPlays === 1 ? "play logged" : "plays logged"} to={collectionLink({ sort: "plays", dir: "desc" })} />
+            {waiting > 0 ? (
+              <Stat value={count(waiting)} label="waiting for a price" to={collectionLink(needsPrice)} />
+            ) : c.last_valued_at ? (
+              <Stat value={<When iso={c.last_valued_at} />} label="last priced" />
             ) : null}
-          </div>
+          </ul>
         </div>
-        <div className="ov-meta">
-          <Link to="/collection" className="ov-meta-link">
-            {plural(c.record_count, "record")}
-          </Link>
-          {c.last_valued_at ? (
-            <span>
-              priced <When iso={c.last_valued_at} />
-            </span>
-          ) : null}
-          {waiting > 0 ? (
-            <Link to={collectionLink(needsPrice)} className="ov-waiting">
-              {count(waiting)} waiting for a price
-            </Link>
-          ) : null}
-        </div>
+        {lastPlayed ? <LastPlayed record={lastPlayed} /> : null}
       </div>
 
       <div className="card">
@@ -128,16 +127,16 @@ export function Overview() {
         )}
       </div>
 
-      {recentlyPlayed.length > 0 ? (
+      {earlier.length > 0 ? (
         <div className="card">
           <div className="row-between">
-            <h2 className="card-title">Recently played</h2>
-            <Link to={collectionLink({ sort: "plays", dir: "desc" })} className="ov-more">
+            <h2 className="card-title">Played before that</h2>
+            <Link to={collectionLink({ sort: "plays", dir: "desc" })} className="more-link">
               Most played
             </Link>
           </div>
-          <div className="ov-shelf">
-            <CoverGrid rows={recentlyPlayed} corner={() => null} />
+          <div className="shelf">
+            <CoverGrid rows={earlier} corner={() => null} />
           </div>
         </div>
       ) : null}
@@ -149,6 +148,27 @@ export function Overview() {
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** The record last on the turntable, shown large with its record half out of the sleeve. */
+function LastPlayed({ record: r }: { record: ListedRecord }) {
+  const image = r.cover_image_url ?? r.thumb_url;
+  return (
+    <div className="ov-last">
+      <h2 className="eyebrow">Last on the turntable</h2>
+      <Link to={`/records/${r.id}`} className="cover-link">
+        <span className="sleeve sleeve-out">
+          <Disc />
+          <span className="cover-art">{image ? <img src={image} alt="" /> : <span className="cover-empty-art" aria-hidden="true" />}</span>
+        </span>
+        <span className="cover-title">{r.title}</span>
+        <span className="cover-artist">{r.artist}</span>
+      </Link>
+      <p className="ov-last-meta">
+        <When iso={r.last_played_at!} /> · {plural(r.play_count, "play")}
+      </p>
+    </div>
   );
 }
 
@@ -185,7 +205,7 @@ const TABS: { id: Tab; label: string; preset: string; none: string }[] = [
   { id: "down", label: "Fallers", preset: "fallers", none: "Nothing went down" },
 ];
 
-/** The biggest risers and fallers over the window, one card with a tab each. */
+/** The biggest risers and fallers over the window, as covers with the change on each, a tab each. */
 function Movers({ risers, fallers, range }: { risers: ListedRecord[]; fallers: ListedRecord[]; range: Range }) {
   const [picked, setPicked] = useState<Tab | null>(null);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
@@ -237,7 +257,7 @@ function Movers({ risers, fallers, range }: { risers: ListedRecord[]; fallers: L
           ))}
         </div>
         {rows.length > 0 ? (
-          <Link to={collectionOver(preset(tab.preset), range)} className="ov-more" aria-label={`See all ${tab.label.toLowerCase()}, ${range.label.toLowerCase()}`}>
+          <Link to={collectionOver(preset(tab.preset), range)} className="more-link" aria-label={`See all ${tab.label.toLowerCase()}, ${range.label.toLowerCase()}`}>
             See all
           </Link>
         ) : null}
@@ -248,18 +268,9 @@ function Movers({ risers, fallers, range }: { risers: ListedRecord[]; fallers: L
             {tab.none} {over(range)}.
           </p>
         ) : (
-          <ul className="movers">
-            {rows.map((r) => (
-              <li key={r.id}>
-                {r.thumb_url ? <img src={r.thumb_url} alt="" width={36} height={36} className="thumb" /> : <span className="thumb" />}
-                <Link to={`/records/${r.id}`} className="movers-name">
-                  <span className="record-title">{r.title}</span>
-                  <span className="record-sub">{r.artist}</span>
-                </Link>
-                <MoneyChange minor={r.change_minor} currency={r.current_currency} />
-              </li>
-            ))}
-          </ul>
+          <div className="shelf">
+            <CoverGrid rows={rows} corner={(r) => <MoneyChange minor={r.change_minor} currency={r.current_currency} />} />
+          </div>
         )}
       </div>
     </div>

@@ -1,10 +1,9 @@
-import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import type { ListedRecord } from "../../src/api-types";
 import { breakdown, BREAKDOWNS, type BreakdownKey, concentration, growth, market, moves, OVERLAPPING, valueBands } from "../../src/insights";
 import { type Bar, BarChart } from "../BarChart";
-import { ErrorState, Loading } from "../components";
+import { ErrorState, Loading, Stat } from "../components";
 import { count, dateTime, formatMinor, plural } from "../format";
 import { LineChart } from "../LineChart";
 import { collectionLink } from "../links";
@@ -47,31 +46,31 @@ export function Insights() {
     <section className="stack">
       <h1>Insights</h1>
 
-      <ul className="ins-figures">
-        <Figure
+      <ul className="stats">
+        <Stat
           value={conc.priced > 0 ? percent(conc.top_share) : "—"}
           label={`of the value in the top ${count(conc.top)}`}
           title={conc.priced > 0 ? [`${formatMinor(conc.total_minor, currency)} in all`, coverage].filter(Boolean).join(". ") : "Shown once records are priced"}
           to={collectionLink({ status: "priced", sort: "value", dir: "desc" })}
         />
-        <Figure
+        <Stat
           value={conc.median_minor !== null ? formatMinor(conc.median_minor, currency) : "—"}
           label="a typical record"
           title={conc.mean_minor !== null ? `The median; the average is ${formatMinor(conc.mean_minor, currency)}` : undefined}
         />
-        <Figure
+        <Stat
           value={`${count(mv.rose)} rose · ${count(mv.fell)} fell`}
           label="price moves, 30 days"
           title={`${count(mv.flat)} unchanged${mv.unknown > 0 ? `, ${count(mv.unknown)} too new to say` : ""}`}
           to={collectionLink({ move: "up", sort: "change", dir: "desc" })}
         />
-        <Figure
+        <Stat
           value={count(mk.suggestion)}
           label="priced by suggestion"
           title={`${count(mk.listing)} from the cheapest copy for sale${mk.unpriced > 0 ? `, ${count(mk.unpriced)} unpriced` : ""}`}
           to={collectionLink({ how: "listing" })}
         />
-        <Figure
+        <Stat
           value={mk.for_sale !== null ? count(mk.for_sale) : "—"}
           label="copies for sale on Discogs"
           title={`${plural(mk.scarce, "record")} with ${count(mk.scarce_at)} or fewer`}
@@ -131,28 +130,6 @@ export function Insights() {
 }
 
 /** One figure in the row at the top: the number first, a short label under it, the rest on hover. */
-function Figure({ value, label, title, to }: { value: ReactNode; label: string; title?: string; to?: string }) {
-  const body = (
-    <>
-      <span className="ins-figure-value">{value}</span>
-      <span className="ins-figure-label">{label}</span>
-    </>
-  );
-  return (
-    <li>
-      {to ? (
-        <Link to={to} className="ins-figure" title={title}>
-          {body}
-        </Link>
-      ) : (
-        <div className="ins-figure" title={title}>
-          {body}
-        </div>
-      )}
-    </li>
-  );
-}
-
 function Breakdown({ rows, by, measure, currency }: { rows: ListedRecord[]; by: BreakdownKey; measure: "value" | "count"; currency: string }) {
   const slices = breakdown(rows, by, currency);
   if (slices.length === 0) return <p className="muted">Nothing to show yet.</p>;

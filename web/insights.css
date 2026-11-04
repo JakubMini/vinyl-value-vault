@@ -1,47 +1,6 @@
 /*
- * Insights: the figures at the top are a row of numbers, not a row of boxes. Each sits after a
- * hairline; the number leads and a short label follows. Tokens only, from styles.css.
+ * Insights: a row of figures (`.stats`, in styles.css), then the breakdowns. Tokens only.
  */
-
-.ins-figures {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px 20px;
-}
-
-.ins-figures > li {
-  min-width: 0;
-  padding-left: 14px;
-  border-left: 1px solid var(--hairline);
-}
-
-.ins-figure {
-  display: grid;
-  gap: 2px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.ins-figure-value {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.ins-figure-label {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-
-a.ins-figure:hover .ins-figure-label {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 .ins-more {
   font-size: 14px;
@@ -54,12 +13,3 @@ a.ins-figure:hover .ins-figure-label {
   text-underline-offset: 2px;
 }
 
-@media (max-width: 640px) {
-  .ins-figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ins-figure-value {
-    font-size: 20px;
-  }
-}

@@ -50,20 +50,29 @@ export function MoneyChange({ minor, currency }: { minor: number | null; currenc
   );
 }
 
-export function Tile({ label, value, detail, to }: { label: string; value: ReactNode; detail?: ReactNode; to?: string }) {
+/**
+ * One figure in a row of them (`<ul className="stats">`): the number leads, a short label follows.
+ * No box; a hairline sets it apart. A whole figure may be a link into the collection.
+ */
+export function Stat({ value, label, title, to }: { value: ReactNode; label: ReactNode; title?: string; to?: string }) {
   const body = (
     <>
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-      {detail ? <div className="tile-detail">{detail}</div> : null}
+      <span className="stat-value">{value}</span>
+      <span className="stat-label">{label}</span>
     </>
   );
-  return to ? (
-    <Link to={to} className="tile tile-link">
-      {body}
-    </Link>
-  ) : (
-    <div className="tile">{body}</div>
+  return (
+    <li>
+      {to ? (
+        <Link to={to} className="stat" title={title}>
+          {body}
+        </Link>
+      ) : (
+        <div className="stat" title={title}>
+          {body}
+        </div>
+      )}
+    </li>
   );
 }
 

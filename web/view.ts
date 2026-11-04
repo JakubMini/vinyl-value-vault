@@ -1,4 +1,4 @@
-/** Table or covers. `?view=grid` in the URL wins; otherwise the last choice made in this browser. */
+/** Covers or table. `?view=` in the URL wins; otherwise the last choice made in this browser; otherwise covers. */
 
 export type View = "table" | "grid";
 
@@ -6,9 +6,9 @@ const STORAGE_KEY = "vinyl-value-vault.view";
 
 export function loadView(): View {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "grid" ? "grid" : "table";
+    return localStorage.getItem(STORAGE_KEY) === "table" ? "table" : "grid";
   } catch {
-    return "table";
+    return "grid";
   }
 }
 

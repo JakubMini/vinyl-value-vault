@@ -235,46 +235,80 @@ nav {
   gap: 16px 24px;
 }
 
-/* Cardless: a tile is a figure on the page; a "card" is a section under a hairline. */
-.tile {
-  padding: 4px 0 0;
-  border-top: 2px solid var(--ink);
-}
-
+/* Cardless: a "card" is a section under a hairline, titled by a small label. */
 .card {
   padding-top: 24px;
   border-top: 1px solid var(--hairline);
 }
 
-.tile-link {
-  display: block;
+/* A small, spaced, upper-case label: section titles and the names of figures. */
+.eyebrow,
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* A row of figures: each after a hairline, the number first and a short label after it. */
+.stats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px 24px;
+}
+
+.stats > li {
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--hairline);
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
   color: inherit;
   text-decoration: none;
 }
 
-.tile-link:hover {
-  border-color: var(--accent);
-}
-
-.tile-label {
-  color: var(--ink-2);
-  font-size: 13px;
-}
-
-.tile-value {
+.stat-value {
   font-size: 24px;
   font-weight: 600;
-  margin-top: 4px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tile-detail {
-  color: var(--ink-muted);
+.stat-label {
   font-size: 13px;
-  margin-top: 2px;
+  color: var(--ink-2);
+}
+
+a.stat:hover .stat-label {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
 }
 
 .card-title {
   margin: 0;
+  line-height: 1.5;
 }
 
 .card > * + * {
@@ -541,24 +575,6 @@ th[aria-sort="descending"] {
   max-width: 420px;
 }
 
-.record-title {
-  font-weight: 600;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* One line, cut with an ellipsis; the full text is in the title attribute. */
-.record-sub {
-  color: var(--ink-2);
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 420px;
-}
-
 .records tr.gone td {
   opacity: 0.6;
 }
@@ -583,8 +599,7 @@ th[aria-sort="descending"] {
   }
 
   /* Narrow enough to leave room for the tick box, the cover, the grade and the value. */
-  .record-cell,
-  .record-sub {
+  .record-cell {
     min-width: 0;
     max-width: 30vw;
   }
@@ -740,7 +755,7 @@ th[aria-sort="descending"] {
   aspect-ratio: 1;
   border-radius: 3px;
   object-fit: cover;
-  background: var(--hover);
+  background: linear-gradient(var(--hover), var(--hover)), var(--page);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 8px 24px -12px rgba(0, 0, 0, 0.35);
 }
 
@@ -859,42 +874,6 @@ th[aria-sort="descending"] {
 .refetching {
   opacity: 0.55;
   transition: opacity 0.15s;
-}
-
-.movers {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.movers li {
-  display: grid;
-  grid-template-columns: 36px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--hairline);
-  font-variant-numeric: tabular-nums;
-}
-
-.movers li:last-child {
-  border-bottom: 0;
-}
-
-.movers .thumb {
-  width: 36px;
-  height: 36px;
-}
-
-.movers-name {
-  min-width: 0;
-  color: inherit;
-  text-decoration: none;
-  display: grid;
-}
-
-.movers-name:hover .record-title {
-  text-decoration: underline;
 }
 
 /* Spotify */
@@ -1147,8 +1126,8 @@ a.bar-row:hover .bar-fill {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 28px 24px;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 32px 28px;
 }
 .cover-link {
   display: grid;
@@ -1162,7 +1141,8 @@ a.bar-row:hover .bar-fill {
   aspect-ratio: 1;
   border-radius: 3px;
   overflow: hidden;
-  background: var(--hover);
+  /* Opaque, so the record behind never shows through a cover still loading. */
+  background: linear-gradient(var(--hover), var(--hover)), var(--page);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
   transition: box-shadow 250ms ease, transform 250ms ease;
 }
@@ -1262,9 +1242,44 @@ a.bar-row:hover .bar-fill {
   transform: translateX(22%) rotate(40deg);
 }
 
-/* On a record's page it sits half out, for good. */
-.rec-sleeve .disc {
+/* A sleeve shown large keeps its record half out; pointing at it nudges the record further. */
+.sleeve-out .disc {
   transform: translateX(34%);
+}
+.cover-link:hover .sleeve-out .disc,
+.cover-link:focus-visible .sleeve-out .disc {
+  transform: translateX(40%) rotate(50deg);
+}
+
+/* "See all" and the like: a quiet link on a section's title line. */
+.more-link {
+  color: var(--ink-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+.more-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* A row of covers, six wide, three on a phone, for a shelf on a page rather than the whole wall. */
+.shelf .covers {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .shelf .covers {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .shelf .cover-tile:nth-child(n + 4) {
+    display: none;
+  }
+}
+
+/* A change on a sleeve's corner takes the chip's colour; its arrow and sign carry the direction. */
+.cover-value .change-up,
+.cover-value .change-down {
+  color: inherit;
 }
 
 code.uid {
