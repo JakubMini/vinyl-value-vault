@@ -73,6 +73,9 @@
   // Resizes Discogs covers for the screen (GET /api/records/:id/cover).
   "images": { "binding": "IMAGES" },
 
+  // The screen's firmware, one build at a time (PUT /api/firmware). D1 holds 2 MB a value; a build is more.
+  "r2_buckets": [{ "binding": "FIRMWARE", "bucket_name": "vinyl-vault-firmware" }],
+
   "vpc_services": [
     {
       "binding": "DISCOGS_EGRESS",

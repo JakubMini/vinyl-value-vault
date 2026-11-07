@@ -4,6 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   ApiRecord,
   CollectionResponse,
+  FirmwareInfo,
   LinkedDevice,
   ListedRecord,
   QueueResponse,
@@ -19,6 +20,7 @@ export const keys = {
   syncRuns: ["sync-runs"] as const,
   records: ["records"] as const,
   devices: ["devices"] as const,
+  firmware: ["firmware"] as const,
 };
 
 /** The total and counts, with `days` of daily totals for the chart. Switching range keeps the old chart until the new one arrives. */
@@ -140,6 +142,22 @@ export function useRevokeDevice() {
   return useMutation({
     mutationFn: (id: number) => api<null>(`/devices/${id}`, { method: "DELETE" }),
     onSettled: () => void client.invalidateQueries({ queryKey: keys.devices }),
+  });
+}
+
+/** The build the screens install on their next sync; null before the first upload. */
+export function useFirmware() {
+  return useQuery({
+    queryKey: keys.firmware,
+    queryFn: () => api<FirmwareInfo>("/firmware").catch((error) => (error instanceof ApiError && error.status === 404 ? null : Promise.reject(error))),
+  });
+}
+
+export function useUploadFirmware() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api<FirmwareInfo>("/firmware", { method: "PUT", body: file, headers: { "content-type": "application/octet-stream" } }),
+    onSuccess: (info) => client.setQueryData(keys.firmware, info),
   });
 }
 

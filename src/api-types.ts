@@ -205,6 +205,14 @@ export interface LinkedDevice {
   approved_at: string | null;
 }
 
+/** GET or PUT /api/firmware: the build the screens install next time they sync. */
+export interface FirmwareInfo {
+  /** The build's ELF SHA-256 in hex, as the image records it: what a screen compares with its own. */
+  build: string;
+  size: number;
+  uploaded_at: string;
+}
+
 /** GET or PUT /api/tags/:uid: the record an NFC tag opens. */
 export interface NfcTag {
   uid: string;
