@@ -134,6 +134,7 @@ A sync adds new records, with whatever grades Discogs has for them, and refreshe
 | Worker CPU | 10 ms per run | Waiting on Discogs is not CPU time |
 | Discogs | 60 calls a minute, per address | At most 30 a minute; reads the rate-limit headers and stops early |
 | D1 reads | 5 million rows a day | About 3 rows per record for the list; the chart reads a small daily table |
+| Images transformations | 5,000 unique a month | One per cover the screen fetches; the screen keeps each one, so a collection costs one per record |
 
 Anything priced in the last 24 hours is skipped, so a fresh collection costs no Discogs calls at all. A full re-price takes about 11 minutes. The daily sync takes its own run: 2 calls, plus one per 100 records.
 
@@ -252,6 +253,7 @@ Everything lives under `/api`. Every route except `/api/health` and the two `/ap
 | `GET /api/records?limit=&offset=&change_days=` | The collection, A–Z, with change over a window, gain on cost, how each price was found, play count, last play and NFC tag UIDs. |
 | `POST /api/records` | Add by `discogs_release_id`, or `artist` and `title`. Priced at once unless `?value=false`. |
 | `GET /api/records/:id?limit=` | One record, its price history, Discogs' price at every grade, and its plays (count, first, last) and NFC tag UIDs. |
+| `GET /api/records/:id/cover` | For the screen: the record's Discogs cover shrunk to at most 180 px a side by Cloudflare Images, as raw RGB, with its size in `X-Cover-Width` and `X-Cover-Height`. |
 | `PATCH /api/records/:id` | Edit. A new grade re-prices from stored suggestions. Takes a Spotify link, URI or id. |
 | `DELETE /api/records/:id` | Remove it, and keep the sync from bringing it back. |
 | `POST /api/records/:id/revalue` | Price one record now. |
@@ -311,7 +313,7 @@ curl -s -X POST http://localhost:5173/api/records \
 
 - **Me, in a browser.** Cloudflare Access asks me to log in, then signs every request. The Worker verifies the token itself: signature, issuer, audience and expiry. A header alone proves nothing.
 - **Scripts and tests.** The API key, compared in constant time. In production a script also needs an Access service token, because every path, `/api/health` included, is behind the login.
-- **A screen on my shelf.** An ESP32 touchscreen can't log in to Access, so it reaches the vault through a small public gateway Worker, which calls this one over a service binding and passes on only eight routes. The screen links with a device code, like signing in to a TV: it shows a code, I approve it on `/link`, and it gets its own `vvd_` token. That token can list records, read one and change its grades, look up or assign the NFC tags in the sleeves, and log plays, nothing else. Only its hash is stored, and I can revoke it on `/link`. At most five codes wait for approval at once, each for ten minutes.
+- **A screen on my shelf.** An ESP32 touchscreen can't log in to Access, so it reaches the vault through a small public gateway Worker, which calls this one over a service binding and passes on only nine routes. The screen links with a device code, like signing in to a TV: it shows a code, I approve it on `/link`, and it gets its own `vvd_` token. That token can list records, read one and its cover (shrunk here, since decoding Discogs' 600 px JPEGs needs more memory than the screen has) and change its grades, look up or assign the NFC tags in the sleeves, and log plays, nothing else. Only its hash is stored, and I can revoke it on `/link`. At most five codes wait for approval at once, each for ten minutes.
 
 <details>
 <summary>Setting up Access, and calling production from a script</summary>
