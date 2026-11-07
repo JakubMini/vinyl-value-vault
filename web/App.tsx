@@ -14,6 +14,7 @@ const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/collection", label: "Collection" },
   { to: "/insights", label: "Insights" },
+  { to: "/link", label: "Screens" },
 ];
 
 export function App() {
