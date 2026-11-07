@@ -18,6 +18,7 @@ import type {
   CollectionResponse,
   DeviceCode,
   DeviceToken,
+  FirmwareInfo,
   LinkedDevice,
   ListedRecord,
   NfcTag,
@@ -175,7 +176,8 @@ const DEVICE_POLL_INTERVAL_S = 5;
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const DEVICE_TOKEN_PREFIX = "vvd_";
 
-// All a screen may do: read records and their covers, change their grades, read and assign NFC tags, and log plays.
+// All a screen may do: read records and their covers, change their grades, read and assign NFC tags,
+// log plays, and fetch a new build of its firmware.
 // PATCH bodies are narrowed below.
 const DEVICE_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/records$/],
@@ -185,6 +187,7 @@ const DEVICE_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/tags\/[^/]+$/],
   ["PUT", /^\/api\/tags\/[^/]+$/],
   ["POST", /^\/api\/plays$/],
+  ["GET", /^\/api\/firmware\/bin$/],
 ];
 const DEVICE_PATCHABLE = new Set(["media_condition", "sleeve_condition"]);
 
@@ -565,6 +568,64 @@ app.delete("/devices/:id", async (c) => {
   const id = parseId(c.req.param("id"));
   if (id === null) return c.json({ error: "Invalid id" }, 400);
   return (await deleteDevice(c.env.DB, id)) ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
+});
+
+// The screen's firmware, one build at a time. A screen asks on each sync, with the build it runs,
+// and installs whatever differs: uploading an older build rolls the screens back.
+const FIRMWARE_KEY = "screen.bin";
+const FIRMWARE_MAX_BYTES = 0x300000; // the screen's app slot
+const ESP32S3_CHIP_ID = 9;
+
+/**
+ * The build an ESP32-S3 app image carries in its app descriptor, or null if it isn't one. Only its
+ * ELF hash: the descriptor's version and compile time are the Arduino libraries', not this build's.
+ */
+function readFirmware(bin: ArrayBuffer): { build: string } | null {
+  if (bin.byteLength < 256 || bin.byteLength > FIRMWARE_MAX_BYTES) return null;
+  const view = new DataView(bin);
+  // esp_image_header_t (24 bytes), the first segment's header (8), then esp_app_desc_t at byte 32.
+  if (view.getUint8(0) !== 0xe9 || view.getUint16(12, true) !== ESP32S3_CHIP_ID || view.getUint32(32, true) !== 0xabcd5432) return null;
+  const build = Array.from(new Uint8Array(bin, 176, 32), (b) => b.toString(16).padStart(2, "0")).join("");
+  // All zeros: built without its ELF hash, so a screen could never tell it from another.
+  if (/^0+$/.test(build)) return null;
+  return { build };
+}
+
+function firmwareInfo(object: R2Object): FirmwareInfo {
+  return {
+    build: object.customMetadata?.build ?? "",
+    size: object.size,
+    uploaded_at: object.uploaded.toISOString(),
+  };
+}
+
+app.get("/firmware", async (c) => {
+  const object = await c.env.FIRMWARE.head(FIRMWARE_KEY);
+  return object ? c.json(firmwareInfo(object) satisfies FirmwareInfo) : c.json({ error: "Not found" }, 404);
+});
+
+app.put("/firmware", async (c) => {
+  if (Number(c.req.header("Content-Length") ?? 0) > FIRMWARE_MAX_BYTES) return c.json({ error: "Larger than the screen's 3 MB app slot" }, 413);
+  const bin = await c.req.arrayBuffer();
+  const info = readFirmware(bin);
+  if (!info) return c.json({ error: "Not a firmware build for the screen: an ESP32-S3 app image (firmware.bin), at most 3 MB" }, 400);
+  const object = await c.env.FIRMWARE.put(FIRMWARE_KEY, bin, { customMetadata: info });
+  return c.json(firmwareInfo(object) satisfies FirmwareInfo);
+});
+
+// The screen's call: 204 when it already runs this build, else the image with its length and build.
+// The screen drops a build it has installed before (one that rolled back, or one since replaced over USB).
+app.get("/firmware/bin", async (c) => {
+  const head = await c.env.FIRMWARE.head(FIRMWARE_KEY);
+  if (!head) return c.json({ error: "Not found" }, 404);
+  if (c.req.query("running") === head.customMetadata?.build) return c.body(null, 204);
+  const object = await c.env.FIRMWARE.get(FIRMWARE_KEY);
+  if (!object) return c.json({ error: "Not found" }, 404);
+  return c.body(object.body, 200, {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": String(object.size),
+    "X-Firmware-Build": object.customMetadata?.build ?? "",
+  });
 });
 
 // NFC tags in record sleeves. A screen looks up a tag it hasn't seen, and assigns new ones.

@@ -41,7 +41,7 @@ Rules for anyone (human or Claude) changing this repo. Read before touching code
 ## Stack and conventions
 
 - TypeScript in strict mode on Cloudflare Workers. Hono for HTTP, Zod for validation, D1 (SQLite)
-  for storage, Cron Triggers for the valuation job and the daily collection sync, Vitest running
+  for storage (and R2 for the screen's firmware, one build too big for D1), Cron Triggers for the valuation job and the daily collection sync, Vitest running
   inside workerd for tests. The dashboard is React built by Vite (`@cloudflare/vite-plugin`) and
   served by the same Worker as static assets.
 - Money is stored as integers in minor units (pence). Times are ISO-8601 UTC strings. Condition

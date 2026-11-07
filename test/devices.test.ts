@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, PlaysRecorded, RecordDetail, RecordsPage } from "../src/api-types";
+import type { DeviceCode, DeviceToken, FirmwareInfo, LinkedDevice, NfcTag, PlaysRecorded, RecordDetail, RecordsPage } from "../src/api-types";
 import { api, expectAllMocksUsed, rawFetch, resetDatabase, seedRecord } from "./helpers";
 import { network } from "./network";
 
@@ -307,5 +307,59 @@ describe("plays", () => {
     expect((await log([], token)).status).toBe(400);
     expect((await log([{ record_id: 1, played_at: "yesterday" }], token)).status).toBe(400);
     expect((await screen("/plays", { method: "POST", json: { plays: [{ record_id: 1 }] } })).status).toBe(401);
+  });
+});
+
+describe("a screen's firmware", () => {
+  beforeEach(() => env.FIRMWARE.delete("screen.bin"));
+
+  /** A minimal ESP32-S3 app image: its header and app descriptor, the build hash filled with `fill`. */
+  function image(fill: number): Uint8Array {
+    const bin = new Uint8Array(1024);
+    const view = new DataView(bin.buffer);
+    bin[0] = 0xe9;
+    view.setUint16(12, 9, true);
+    view.setUint32(32, 0xabcd5432, true);
+    bin.fill(fill, 176, 208);
+    return bin;
+  }
+  const upload = (bin: Uint8Array) => api("/firmware", { method: "PUT", body: bin, headers: { "content-type": "application/octet-stream" } });
+  const build = (fill: number) => fill.toString(16).padStart(2, "0").repeat(32);
+
+  it("takes an upload and tells the dashboard about it", async () => {
+    expect((await api("/firmware")).status).toBe(404);
+    const res = await upload(image(0xab));
+    expect(res.status).toBe(200);
+    const info = await res.json<FirmwareInfo>();
+    expect(info).toMatchObject({ build: build(0xab), size: 1024 });
+    expect(await (await api("/firmware")).json()).toEqual(info);
+  });
+
+  it("refuses anything that isn't an ESP32-S3 app image", async () => {
+    const other = image(0xab);
+    other[12] = 0; // another chip
+    for (const bin of [new Uint8Array(1024), other, image(0)]) expect((await upload(bin)).status).toBe(400);
+    expect((await api("/firmware")).status).toBe(404);
+  });
+
+  it("sends a screen the build only when it runs another", async () => {
+    const token = await linkedScreen();
+    expect((await screen("/firmware/bin?running=" + build(1), { token })).status).toBe(404);
+    await upload(image(0xab));
+
+    const fresh = await screen("/firmware/bin?running=" + build(1), { token });
+    expect(fresh.status).toBe(200);
+    expect(fresh.headers.get("Content-Length")).toBe("1024");
+    expect(fresh.headers.get("X-Firmware-Build")).toBe(build(0xab));
+    expect(new Uint8Array(await fresh.arrayBuffer())).toEqual(image(0xab));
+
+    expect((await screen("/firmware/bin?running=" + build(0xab), { token })).status).toBe(204);
+  });
+
+  it("lets a screen fetch a build but not upload one", async () => {
+    const token = await linkedScreen();
+    const res = await rawFetch("/api/firmware", { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: image(0xab) });
+    expect(res.status).toBe(403);
+    expect((await screen("/firmware", { token })).status).toBe(403);
   });
 });
