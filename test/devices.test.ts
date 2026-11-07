@@ -1,8 +1,10 @@
 import { env } from "cloudflare:workers";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DeviceCode, DeviceToken, LinkedDevice, NfcTag, PlaysRecorded, RecordDetail, RecordsPage } from "../src/api-types";
 import { api, expectAllMocksUsed, rawFetch, resetDatabase, seedRecord } from "./helpers";
+import { network } from "./network";
 
 beforeEach(resetDatabase);
 afterEach(expectAllMocksUsed);
@@ -143,6 +145,48 @@ describe("a linked screen", () => {
 
   it("is refused with a made-up token", async () => {
     expect((await screen("/records", { token: "vvd_made-up" })).status).toBe(401);
+  });
+});
+
+describe("a screen's cover", () => {
+  // A 300 x 150 progressive JPEG, as Discogs sends them.
+  const JPEG = Uint8Array.from(atob("/9j/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wgARCACWASwDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAWAQEBAQAAAAAAAAAAAAAAAAAAAwX/2gAMAwEAAhADEAAAAYRPXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//xAAUEAEAAAAAAAAAAAAAAAAAAACQ/9oACAEBAAEFAjS//8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAwEBPwE+/8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAgEBPwE+/8QAFBABAAAAAAAAAAAAAAAAAAAAkP/aAAgBAQAGPwI0v//EABQQAQAAAAAAAAAAAAAAAAAAAJD/2gAIAQEAAT8hNL//2gAMAwEAAgADAAAAEPffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff/8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAwEBPxA+/8QAFBEBAAAAAAAAAAAAAAAAAAAAcP/aAAgBAgEBPxA+/8QAFBABAAAAAAAAAAAAAAAAAAAAkP/aAAgBAQABPxA0v//Z"), (ch) => ch.charCodeAt(0));
+  const COVER = "https://i.discogs.com/test/cover.jpeg";
+
+  async function withCover(url: string | null) {
+    const { id } = await seedRecord({ artist: "Suede", title: "Dog Man Star" });
+    await env.DB.prepare("UPDATE records SET cover_image_url = ? WHERE id = ?").bind(url, id).run();
+    return id;
+  }
+
+  it("comes at most 180 px a side, as raw RGB with its size", async () => {
+    const token = await linkedScreen();
+    const id = await withCover(COVER);
+    network.use(http.get(COVER, () => HttpResponse.arrayBuffer(JPEG.buffer, { headers: { "content-type": "image/jpeg" } })));
+    // Local mode can't output raw RGB, so the resize itself is stubbed; .info() is the real one.
+    const asked: ImageTransform[] = [];
+    const input = vi.spyOn(env.IMAGES, "input").mockImplementation(() => {
+      const handle = {
+        transform: (t: ImageTransform) => (asked.push(t), handle),
+        output: async () => ({ image: () => new Blob([new Uint8Array(180 * 90 * 3).fill(7)]).stream() }),
+      };
+      return handle as unknown as ImageTransformer;
+    });
+
+    const res = await screen(`/records/${id}/cover`, { token });
+    input.mockRestore();
+    expect(res.status).toBe(200);
+    expect(asked).toEqual([{ width: 180, height: 90, fit: "squeeze" }]);
+    expect([res.headers.get("X-Cover-Width"), res.headers.get("X-Cover-Height")]).toEqual(["180", "90"]);
+    expect((await res.arrayBuffer()).byteLength).toBe(180 * 90 * 3);
+  });
+
+  it("is a 404 for a record without one, and a 502 when Discogs fails", async () => {
+    const token = await linkedScreen();
+    expect((await screen(`/records/${await withCover(null)}/cover`, { token })).status).toBe(404);
+    const id = await withCover(COVER);
+    network.use(http.get(COVER, () => new HttpResponse(null, { status: 404 })));
+    expect((await screen(`/records/${id}/cover`, { token })).status).toBe(502);
   });
 });
 

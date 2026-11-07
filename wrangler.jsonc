@@ -70,6 +70,9 @@
   // service, `discogs-api`, for api.discogs.com on port 443, reached through the Cloudflare
   // Tunnel `vinyl-vault-egress`, whose connector runs on a laptop (scripts/egress.ts). Calls
   // through it leave from that laptop's address. Used only when DISCOGS_ROAD is "tunnel".
+  // Resizes Discogs covers for the screen (GET /api/records/:id/cover).
+  "images": { "binding": "IMAGES" },
+
   "vpc_services": [
     {
       "binding": "DISCOGS_EGRESS",

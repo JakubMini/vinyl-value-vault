@@ -175,11 +175,12 @@ const DEVICE_POLL_INTERVAL_S = 5;
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const DEVICE_TOKEN_PREFIX = "vvd_";
 
-// All a screen may do: read records, change their grades, read and assign NFC tags, and log plays.
+// All a screen may do: read records and their covers, change their grades, read and assign NFC tags, and log plays.
 // PATCH bodies are narrowed below.
 const DEVICE_ROUTES: [string, RegExp][] = [
   ["GET", /^\/api\/records$/],
   ["GET", /^\/api\/records\/[^/]+$/],
+  ["GET", /^\/api\/records\/[^/]+\/cover$/],
   ["PATCH", /^\/api\/records\/[^/]+$/],
   ["GET", /^\/api\/tags\/[^/]+$/],
   ["PUT", /^\/api\/tags\/[^/]+$/],
@@ -443,6 +444,42 @@ app.get("/records/:id", validate("query", historySchema), async (c) => {
     price_by_grade: latest ? priceByGrade(latest.raw, c.env.VALUATION_CURRENCY) : null,
     discogs_url: record.discogs_release_id ? `https://www.discogs.com/release/${record.discogs_release_id}` : null,
   } satisfies RecordDetail);
+});
+
+// The screen's cover: at most SCREEN_COVER_PX a side, as raw RGB (3 bytes a pixel, rows top
+// first), its size in X-Cover-Width and X-Cover-Height. The screen can't decode Discogs' 600 px
+// progressive JPEGs itself: that takes about 3 MB, more memory than it has to spare.
+// shortcut: re-made from Discogs on every call (billed once a month per cover); the screen keeps
+// each one on flash, so store them (R2) only if Discogs' URLs stop lasting.
+const SCREEN_COVER_PX = 180;
+app.get("/records/:id/cover", async (c) => {
+  const id = parseId(c.req.param("id"));
+  if (id === null) return c.json({ error: "Invalid id" }, 400);
+  const url = (await getRecord(c.env.DB, id))?.cover_image_url;
+  if (!url) return c.json({ error: "Not found" }, 404);
+  const original = await fetch(url, { headers: { "User-Agent": c.env.DISCOGS_USER_AGENT } });
+  if (!original.ok) return c.json({ error: "Cover unavailable", status: original.status }, 502);
+  const bytes = await original.arrayBuffer();
+  try {
+    const info = await c.env.IMAGES.info(new Blob([bytes]).stream());
+    if (!("width" in info)) return c.json({ error: "Cover unavailable" }, 502);
+    const scale = Math.max(1, Math.max(info.width, info.height) / SCREEN_COVER_PX);
+    const width = Math.max(1, Math.round(info.width / scale));
+    const height = Math.max(1, Math.round(info.height / scale));
+    const result = await c.env.IMAGES.input(new Blob([bytes]).stream())
+      .transform({ width, height, fit: "squeeze" })
+      .output({ format: "rgb" });
+    const rgb = await new Response(result.image()).arrayBuffer();
+    if (rgb.byteLength !== width * height * 3) return c.json({ error: "Cover unavailable" }, 502);
+    return c.body(rgb, 200, {
+      "Content-Type": "application/octet-stream",
+      "X-Cover-Width": String(width),
+      "X-Cover-Height": String(height),
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ event: "cover.failed", record: id, error: String(error) }));
+    return c.json({ error: "Cover unavailable" }, 502);
+  }
 });
 
 // A new media grade re-prices the record straight away from stored Discogs suggestions; see regrade().
